@@ -1,0 +1,110 @@
+{
+  "config": {
+    "deadlinePST": "2026-09-18T18:00:00+08:00",
+    "deadlineLabel": "September 18, 6:00 PM PST (Philippine Standard Time)",
+    "eventTitle": "Christmas Giveaway Poll",
+    "eventSubtitle": "Vote for your preferred Christmas giveaway item. Choose one option below!",
+    "companyName": "Holiday Cheer Committee"
+  },
+  "polls": [
+    {
+      "order": 1,
+      "createdAt": "2026-09-16T00:00:00.000Z",
+      "category": "Christmas Giveaway",
+      "id": "poll-giveaway",
+      "title": "Christmas Giveaway Poll",
+      "description": "Vote for your preferred Christmas giveaway item. Choose one option below!",
+      "active": false,
+      "options": [
+        {
+          "badge": "Gadget",
+          "text": "Apple iPad Air Bundle with Apple Pencil",
+          "id": "opt-1",
+          "description": "Latest model iPad with Apple Pencil for digital notes, art, and entertainment."
+        },
+        {
+          "id": "opt-2",
+          "text": "55\" Samsung 4K Smart UHD TV",
+          "description": "Ultra-vibrant 4K cinema display for holiday family movies and entertainment.",
+          "badge": "Home Appliance"
+        },
+        {
+          "description": "Flexible universal vouchers for pure holiday shopping or family groceries.",
+          "id": "opt-3",
+          "text": "₱25,000 Puregold / SM Shopping & Grocery Spree",
+          "badge": "Gift Vouchers"
+        },
+        {
+          "text": "Dyson Supersonic Hair Dryer / Luxury Styler",
+          "badge": "Lifestyle",
+          "description": "Engineered for all hair types with intelligent heat control protection.",
+          "id": "opt-4"
+        },
+        {
+          "text": "PlayStation 5 Console Gaming Bundle",
+          "badge": "Gaming",
+          "id": "opt-5",
+          "description": "Next-gen gaming with DualSense wireless controller and games."
+        },
+        {
+          "id": "opt-6",
+          "badge": "Holiday Feast",
+          "text": "Gourmet Noche Buena Feast Hamper & Wine",
+          "description": "Smoked Christmas ham, aged Queso de Bola, imported pasta, panettone, and sparkling wine."
+        },
+        {
+          "text": "Sony Noise-Cancelling Wireless Headphones",
+          "id": "opt-7",
+          "description": "Industry-leading noise cancellation, crystal-clear calls, and 30-hour battery.",
+          "badge": "Audio"
+        },
+        {
+          "text": "Nespresso Compact Espresso Machine & Frother",
+          "id": "opt-8",
+          "badge": "Coffee Barista",
+          "description": "Cafe-grade espresso, cappuccinos, and lattes brewed in seconds at home."
+        }
+      ]
+    },
+    {
+      "createdAt": "2026-09-16T04:23:46.975Z",
+      "order": 2,
+      "active": true,
+      "category": "Christmas Theme",
+      "title": "Choose your preferred Christmas Theme",
+      "options": [
+        {
+          "id": "opt-1789532626975-1",
+          "text": "Cowboy",
+          "description": "Wild West holiday boots, hats, denim, and barn dance atmosphere.",
+          "badge": "Western",
+          "imageUrl": "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=600&auto=format&fit=crop&q=80"
+        },
+        {
+          "id": "opt-1789532626975-2",
+          "text": "Iconic Christmas Character",
+          "description": "Dress as Santa, Mrs. Claus, the Grinch, Jack Frost, or Rudolph.",
+          "badge": "Festive Costume",
+          "imageUrl": "https://images.unsplash.com/photo-1543258103-a62bdc069871?w=600&auto=format&fit=crop&q=80"
+        },
+        {
+          "id": "opt-1789532626975-3",
+          "text": "Retro Glam",
+          "description": "Dazzling 70s/80s glitz, sequins, disco ball sparkle, and gold accents.",
+          "badge": "Vintage Party",
+          "imageUrl": "https://images.unsplash.com/photo-1519741497674-611481863552?w=600&auto=format&fit=crop&q=80"
+        },
+        {
+          "id": "opt-1789532626975-4",
+          "text": "World Cup",
+          "description": "Represent your favorite national team jersey, stadium fan energy, and trophy glory.",
+          "badge": "Sports Arena",
+          "imageUrl": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&auto=format&fit=crop&q=80"
+        }
+      ],
+      "description": "Vote for your favorite holiday celebration theme. Select one choice below!",
+      "id": "poll-1789532626975"
+    }
+  ],
+  "voters": []
+}

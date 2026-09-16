@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "Poll": {
+      "title": "Poll",
+      "description": "Giveaway poll definition and choices",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "active": { "type": "boolean" },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "options": { "type": "array" }
+      },
+      "required": ["id", "title", "options"]
+    },
+    "Voter": {
+      "title": "Voter",
+      "description": "Individual voter ballot response",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "voterName": { "type": "string" },
+        "voterIdentifier": { "type": "string" },
+        "votes": { "type": "object" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "voterName", "voterIdentifier", "votes", "timestamp"]
+    },
+    "Config": {
+      "title": "Config",
+      "description": "Event and countdown configuration",
+      "type": "object",
+      "properties": {
+        "deadlinePST": { "type": "string" },
+        "deadlineLabel": { "type": "string" },
+        "eventTitle": { "type": "string" },
+        "eventSubtitle": { "type": "string" },
+        "companyName": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "polls": {
+      "entity": "Poll",
+      "description": "Collection of giveaway polls"
+    },
+    "voters": {
+      "entity": "Voter",
+      "description": "Collection of sealed voter ballots"
+    },
+    "config": {
+      "entity": "Config",
+      "description": "App configuration"
+    }
+  }
+}
