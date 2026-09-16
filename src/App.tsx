@@ -25,10 +25,24 @@ import { FestiveHeader } from './components/FestiveHeader.tsx';
 import { VoterConfirmedView } from './components/VoterConfirmedView.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
 import type { AppConfig, Poll, PublicPollsResponse } from './types.ts';
+import { fetchAdminDataDirect, directSubmitVote } from './clientDirectFirestore.ts';
+
+function checkIsAdminRoute(): boolean {
+  if (typeof window === 'undefined') return false;
+  const path = window.location.pathname.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+  const search = window.location.search.toLowerCase();
+  return (
+    path.startsWith('/admin') ||
+    hash.includes('admin') ||
+    search.includes('admin') ||
+    new URLSearchParams(window.location.search).get('view') === 'admin'
+  );
+}
 
 export default function App() {
-  // Routing: check if user accessed "/admin"
-  const [currentPath, setCurrentPath] = useState<string>(() => window.location.pathname);
+  // Routing: check if user accessed "/admin" (via path, hash, or query)
+  const [isAdminRoute, setIsAdminRoute] = useState<boolean>(checkIsAdminRoute);
 
   // Polls & Config data
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -48,27 +62,51 @@ export default function App() {
   const [confirmedTimestamp, setConfirmedTimestamp] = useState('');
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
 
-  // Handle URL path changes (e.g. user manually adds /admin)
+  // Handle URL path & hash changes
   useEffect(() => {
     const handleLocationChange = () => {
-      setCurrentPath(window.location.pathname);
+      setIsAdminRoute(checkIsAdminRoute());
     };
 
     window.addEventListener('popstate', handleLocationChange);
-    return () => window.removeEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
   }, []);
 
   // Fetch poll data on mount
   const fetchPolls = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/public-polls');
-      if (!res.ok) throw new Error('Unable to load giveaway poll');
-      const data: PublicPollsResponse = await res.json();
-      setConfig(data.config);
-      // Grab active poll (the single giveaway poll tile)
-      if (data.polls && data.polls.length > 0) {
-        setPoll(data.polls[0]);
+      let data: PublicPollsResponse | null = null;
+      try {
+        const res = await fetch('/api/public-polls');
+        if (res.ok) {
+          const text = await res.text();
+          try {
+            data = JSON.parse(text);
+          } catch (e) {}
+        }
+      } catch (e) {
+        console.warn('API fetch /api/public-polls failed, falling back to direct Firestore:', e);
+      }
+
+      // If backend API not reachable (e.g. pure static Vercel deployment), query Firestore directly
+      if (!data) {
+        const directData = await fetchAdminDataDirect();
+        data = {
+          config: directData.config,
+          polls: directData.polls.filter((p) => p.active),
+        };
+      }
+
+      if (data) {
+        setConfig(data.config);
+        if (data.polls && data.polls.length > 0) {
+          setPoll(data.polls[0]);
+        }
       }
 
       // Check if user previously voted on this device
@@ -168,28 +206,53 @@ export default function App() {
 
     try {
       setSubmitting(true);
-      const res = await fetch('/api/vote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          voterName: cleanName,
-          votes: { [poll.id]: selectedOptionId },
-        }),
-      });
+      let voteConfirmed = false;
+      let timestamp = new Date().toISOString();
 
-      const json = await res.json();
+      try {
+        const res = await fetch('/api/vote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            voterName: cleanName,
+            votes: { [poll.id]: selectedOptionId },
+          }),
+        });
 
-      if (!res.ok) {
-        throw new Error(json.error || 'Failed to submit vote');
+        if (res.ok) {
+          const json = await res.json();
+          voteConfirmed = true;
+          if (json.timestamp) timestamp = json.timestamp;
+        } else {
+          const errJson = await res.json().catch(() => null);
+          if (errJson?.error) {
+            throw new Error(errJson.error);
+          }
+        }
+      } catch (apiErr: any) {
+        // If it was an explicit validation error from backend (like already voted), rethrow
+        if (apiErr.message && !apiErr.message.includes('fetch')) {
+          throw apiErr;
+        }
+      }
+
+      // If backend API route was not reachable (e.g. pure static Vercel), save directly to Firestore
+      if (!voteConfirmed) {
+        const directRes = await directSubmitVote(
+          cleanName,
+          { [poll.id]: selectedOptionId },
+          config?.deadlinePST
+        );
+        timestamp = directRes.timestamp;
       }
 
       // Save to localStorage
       localStorage.setItem('christmas_giveaway_voter_name', cleanName);
-      localStorage.setItem('christmas_giveaway_timestamp', json.timestamp || new Date().toISOString());
+      localStorage.setItem('christmas_giveaway_timestamp', timestamp);
 
       // Show confirmed view
       setConfirmedVoterName(cleanName);
-      setConfirmedTimestamp(json.timestamp || new Date().toISOString());
+      setConfirmedTimestamp(timestamp);
       setHasVoted(true);
 
       // Festive celebration effects
@@ -211,15 +274,12 @@ export default function App() {
     setFormError(null);
   };
 
-  // Check if current URL route is /admin
-  const isAdminRoute = currentPath.toLowerCase().startsWith('/admin');
-
   if (isAdminRoute) {
     return (
       <AdminDashboard
         onNavigateToMain={() => {
           window.history.pushState({}, '', '/');
-          setCurrentPath('/');
+          setIsAdminRoute(false);
           fetchPolls();
         }}
       />
@@ -510,7 +570,7 @@ export default function App() {
           )}
         </div>
 
-        {/* Festive Footer (STRICTLY NO ADMIN LINK) */}
+        {/* Festive Footer */}
         <footer className="mt-16 text-center text-xs text-emerald-300/60">
           <p className="flex items-center justify-center gap-1.5">
             <span>🎄</span>
@@ -519,8 +579,19 @@ export default function App() {
             <span>Wishing You a Joyful Holiday Season!</span>
             <span>⭐</span>
           </p>
-          <p className="mt-1 text-[11px] text-slate-400/60">
-            Countdown target: September 18, 6:00 PM PST • Committee Secret Ballot
+          <p className="mt-1.5 text-[11px] text-slate-400/60">
+            Countdown target: September 18, 6:00 PM PST •{' '}
+            <button
+              type="button"
+              onClick={() => {
+                window.history.pushState({}, '', '/admin');
+                setIsAdminRoute(true);
+              }}
+              className="text-emerald-400/60 hover:text-amber-300 transition-colors underline decoration-dotted underline-offset-2 cursor-pointer"
+              title="Authorized Committee Access"
+            >
+              Committee Secret Ballot
+            </button>
           </p>
         </footer>
       </div>

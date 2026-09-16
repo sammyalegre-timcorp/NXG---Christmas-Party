@@ -26,6 +26,13 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import type { AdminDataResponse, Poll, PollOption } from '../types.ts';
+import {
+  fetchAdminDataDirect,
+  directSavePoll,
+  directDeletePoll,
+  directSaveConfig,
+  directClearAllVotes,
+} from '../clientDirectFirestore.ts';
 
 const PHOTO_PRESETS = [
   { label: '📱 Tablet', url: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=600&auto=format&fit=crop&q=80' },
@@ -74,16 +81,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
   const fetchAdminData = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/data');
-      if (!res.ok) throw new Error('Failed to fetch admin data');
-      const json: AdminDataResponse = await res.json();
-      setData(json);
-      setDeadlineInput(json.config.deadlinePST);
-      setDeadlineLabelInput(json.config.deadlineLabel);
-      setEventTitleInput(json.config.eventTitle);
+      let json: AdminDataResponse | null = null;
+
+      try {
+        const res = await fetch('/api/admin/data');
+        if (res.ok) {
+          const text = await res.text();
+          try {
+            json = JSON.parse(text);
+          } catch (e) {}
+        }
+      } catch (apiErr) {
+        console.warn('API /api/admin/data call failed, falling back to direct Firestore:', apiErr);
+      }
+
+      // If backend API returned non-JSON or failed (e.g. static Vercel deployment), query Firestore directly
+      if (!json) {
+        json = await fetchAdminDataDirect();
+      }
+
+      if (json) {
+        setData(json);
+        setDeadlineInput(json.config.deadlinePST);
+        setDeadlineLabelInput(json.config.deadlineLabel);
+        setEventTitleInput(json.config.eventTitle);
+      }
     } catch (err: any) {
       console.error(err);
-      showMessage(err.message || 'Failed to connect to admin API', 'error');
+      showMessage(err.message || 'Failed to connect to admin data store', 'error');
     } finally {
       setLoading(false);
     }
@@ -189,31 +214,77 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
     }
 
     try {
+      let saved = false;
+
       if (editingPollId) {
-        const res = await fetch(`/api/admin/polls/${editingPollId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: pollTitle,
-            description: pollDescription,
-            category: pollCategory,
-            options: cleanOptions,
-          }),
-        });
-        if (!res.ok) throw new Error('Failed to update poll');
+        try {
+          const res = await fetch(`/api/admin/polls/${editingPollId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: pollTitle,
+              description: pollDescription,
+              category: pollCategory,
+              options: cleanOptions,
+            }),
+          });
+          if (res.ok) saved = true;
+        } catch (e) {}
+
+        if (!saved) {
+          const existingPoll = data?.polls.find((p) => p.id === editingPollId);
+          await directSavePoll({
+            id: editingPollId,
+            title: pollTitle.trim(),
+            description: pollDescription.trim(),
+            category: pollCategory.trim() || 'Giveaway',
+            order: existingPoll?.order || 1,
+            active: existingPoll?.active ?? true,
+            createdAt: existingPoll?.createdAt || new Date().toISOString(),
+            options: cleanOptions.map((opt, idx) => ({
+              id: opt.id || 'opt-' + Date.now() + '-' + (idx + 1),
+              text: opt.text.trim(),
+              description: opt.description.trim(),
+              badge: opt.badge.trim(),
+              imageUrl: opt.imageUrl?.trim() || '',
+            })),
+          });
+        }
         showMessage('Poll successfully updated!');
       } else {
-        const res = await fetch('/api/admin/polls', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: pollTitle,
-            description: pollDescription,
-            category: pollCategory,
-            options: cleanOptions,
-          }),
-        });
-        if (!res.ok) throw new Error('Failed to create poll');
+        const newPollId = 'poll-' + Date.now();
+        try {
+          const res = await fetch('/api/admin/polls', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: pollTitle,
+              description: pollDescription,
+              category: pollCategory,
+              options: cleanOptions,
+            }),
+          });
+          if (res.ok) saved = true;
+        } catch (e) {}
+
+        if (!saved) {
+          await directSavePoll({
+            id: newPollId,
+            title: pollTitle.trim(),
+            description: pollDescription.trim(),
+            category: pollCategory.trim() || 'Giveaway',
+            order: (data?.polls.length || 0) + 1,
+            active: true,
+            createdAt: new Date().toISOString(),
+            options: cleanOptions.map((opt, idx) => ({
+              id: opt.id || 'opt-' + Date.now() + '-' + (idx + 1),
+              text: opt.text.trim(),
+              description: opt.description.trim(),
+              badge: opt.badge.trim(),
+              imageUrl: opt.imageUrl?.trim() || '',
+            })),
+          });
+        }
         showMessage('New Christmas poll successfully added!');
       }
 
@@ -227,8 +298,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
   const handleDeletePoll = async (id: string, title: string) => {
     if (!confirm(`Are you sure you want to delete the poll: "${title}"?`)) return;
     try {
-      const res = await fetch(`/api/admin/polls/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete poll');
+      let deleted = false;
+      try {
+        const res = await fetch(`/api/admin/polls/${id}`, { method: 'DELETE' });
+        if (res.ok) deleted = true;
+      } catch (e) {}
+
+      if (!deleted) {
+        await directDeletePoll(id);
+      }
       showMessage('Poll deleted');
       fetchAdminData();
     } catch (err: any) {
@@ -238,12 +316,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
 
   const handleTogglePollActive = async (poll: Poll) => {
     try {
-      const res = await fetch(`/api/admin/polls/${poll.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ active: !poll.active }),
-      });
-      if (!res.ok) throw new Error('Failed to toggle status');
+      let toggled = false;
+      try {
+        const res = await fetch(`/api/admin/polls/${poll.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active: !poll.active }),
+        });
+        if (res.ok) toggled = true;
+      } catch (e) {}
+
+      if (!toggled) {
+        await directSavePoll({ ...poll, active: !poll.active });
+      }
       fetchAdminData();
     } catch (err: any) {
       showMessage(err.message || 'Error toggling poll status', 'error');
@@ -253,16 +338,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/admin/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          deadlinePST: deadlineInput,
-          deadlineLabel: deadlineLabelInput,
-          eventTitle: eventTitleInput,
+      let saved = false;
+      const updatedConfig = {
+        ...(data?.config || {
+          deadlinePST: '2026-09-18T18:00:00+08:00',
+          deadlineLabel: 'September 18, 6:00 PM PST',
+          eventTitle: 'Christmas Giveaway Poll',
+          eventSubtitle: 'Vote for your preferred Christmas giveaway item. Choose one option below!',
+          companyName: 'Holiday Cheer Committee',
         }),
-      });
-      if (!res.ok) throw new Error('Failed to update settings');
+        deadlinePST: deadlineInput,
+        deadlineLabel: deadlineLabelInput,
+        eventTitle: eventTitleInput,
+      };
+
+      try {
+        const res = await fetch('/api/admin/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedConfig),
+        });
+        if (res.ok) saved = true;
+      } catch (e) {}
+
+      if (!saved) {
+        await directSaveConfig(updatedConfig);
+      }
       showMessage('Countdown settings updated successfully!');
       fetchAdminData();
     } catch (err: any) {
@@ -272,14 +373,116 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
 
   const handleClearAllVotes = async () => {
     try {
-      const res = await fetch('/api/admin/clear-votes', { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to clear votes');
+      let cleared = false;
+      try {
+        const res = await fetch('/api/admin/clear-votes', { method: 'POST' });
+        if (res.ok) cleared = true;
+      } catch (e) {}
+
+      if (!cleared && data?.voters) {
+        await directClearAllVotes(data.voters.map((v) => v.id));
+      }
       setShowClearModal(false);
       showMessage('All votes have been cleared for a fresh ballot count!');
       fetchAdminData();
     } catch (err: any) {
       showMessage(err.message || 'Error clearing votes', 'error');
     }
+  };
+
+  const escapeCsv = (val: string | number | undefined | null): string => {
+    if (val === null || val === undefined) return '""';
+    return `"${String(val).replace(/"/g, '""')}"`;
+  };
+
+  const handleDownloadEntriesCSV = () => {
+    if (!data?.voters || data.voters.length === 0) {
+      showMessage('No voter entries recorded yet to export.', 'error');
+      return;
+    }
+    const BOM = '\uFEFF';
+    const isSinglePoll = data.polls.length === 1;
+    const headerRow = isSinglePoll
+      ? ['Voter Name', 'Submission Timestamp (PST / UTC+8)', 'Selected Giveaway Option', 'Option Tag/Badge']
+      : ['Voter Name', 'Submission Timestamp (PST / UTC+8)', ...data.polls.map((p) => p.title)];
+
+    const rows: string[] = [headerRow.map(escapeCsv).join(',')];
+
+    data.voters.forEach((v) => {
+      let pstDate = v.timestamp;
+      try {
+        pstDate =
+          new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Manila',
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true,
+          }).format(new Date(v.timestamp)) + ' PST';
+      } catch (e) {}
+
+      if (isSinglePoll) {
+        const singlePoll = data.polls[0];
+        const selectedOptId = v.votes[singlePoll.id];
+        const opt = singlePoll.options.find((o) => o.id === selectedOptId);
+        rows.push([v.voterName, pstDate, opt ? opt.text : selectedOptId || 'None', opt?.badge || ''].map(escapeCsv).join(','));
+      } else {
+        const answers = data.polls.map((p) => {
+          const selectedOptId = v.votes[p.id];
+          const opt = p.options.find((o) => o.id === selectedOptId);
+          return opt ? opt.text : selectedOptId || 'None';
+        });
+        rows.push([v.voterName, pstDate, ...answers].map(escapeCsv).join(','));
+      }
+    });
+
+    const blob = new Blob([BOM + rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `christmas-giveaway-entries-${Date.now()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showMessage('Individual entries CSV downloaded successfully!');
+  };
+
+  const handleDownloadTalliesCSV = () => {
+    if (!data?.tallies || data.tallies.length === 0) {
+      showMessage('No tallies available to export yet.', 'error');
+      return;
+    }
+    const BOM = '\uFEFF';
+    const headerRow = ['Poll Title', 'Poll Category', 'Option Text', 'Tag/Badge', 'Vote Count', 'Percentage (%)', 'Total Poll Votes'];
+    const rows: string[] = [headerRow.map(escapeCsv).join(',')];
+
+    data.tallies.forEach((tally) => {
+      const poll = data.polls.find((p) => p.id === tally.pollId);
+      const category = poll?.category || 'General';
+
+      tally.options.forEach((opt) => {
+        rows.push(
+          [tally.pollTitle, category, opt.text, opt.badge || '', opt.count, `${opt.percentage}%`, tally.totalVotes]
+            .map(escapeCsv)
+            .join(',')
+        );
+      });
+    });
+
+    const blob = new Blob([BOM + rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `christmas-giveaway-tallies-summary-${Date.now()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showMessage('Tallies summary CSV downloaded successfully!');
   };
 
   const filteredVoters = (data?.voters || []).filter((v) =>
@@ -426,20 +629,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
               </div>
             </div>
             <div className="mt-3 flex items-center gap-2">
-              <a
-                href="/api/admin/export-csv"
-                download
-                className="inline-flex items-center gap-1 rounded-lg bg-amber-400/20 px-2.5 py-1 text-xs font-bold text-amber-300 border border-amber-400/30 hover:bg-amber-400/30"
+              <button
+                type="button"
+                onClick={handleDownloadEntriesCSV}
+                className="inline-flex items-center gap-1 rounded-lg bg-amber-400/20 px-2.5 py-1 text-xs font-bold text-amber-300 border border-amber-400/30 hover:bg-amber-400/30 cursor-pointer"
+                title="Download Individual Ballot Entries CSV"
               >
                 Entries CSV
-              </a>
-              <a
-                href="/api/admin/export-summary-csv"
-                download
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1 text-xs font-bold text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadTalliesCSV}
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1 text-xs font-bold text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer"
+                title="Download Overall Tallies Summary CSV"
               >
                 Tallies CSV
-              </a>
+              </button>
             </div>
             <p className="mt-2 text-[11px] text-slate-400">
               Direct download formatted for Excel

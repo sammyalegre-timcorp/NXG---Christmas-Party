@@ -22,17 +22,42 @@ import type { AppConfig, Poll, VoterResponse, DatabaseSchema } from './types.ts'
 let firestoreInstance: Firestore | null = null;
 let firebaseConfig: any = null;
 
+const BUILTIN_FIREBASE_CONFIG = {
+  projectId: 'gen-lang-client-0777938090',
+  appId: '1:688017099761:web:0f10b30abd26bb48b01250',
+  apiKey: 'AIzaSyBDQMpsewCxYLv62FbDEIfTIwldMTgWITk',
+  authDomain: 'gen-lang-client-0777938090.firebaseapp.com',
+  firestoreDatabaseId: 'ai-studio-christmasgiveawa-caf1cdf5-2d5b-4dcf-88db-246764435a20',
+  storageBucket: 'gen-lang-client-0777938090.firebasestorage.app',
+  messagingSenderId: '688017099761',
+  oAuthClientId: '688017099761-f24fm851brk1kqsd2eborhgonhatp8km.apps.googleusercontent.com',
+};
+
 export function getFirestoreDb(): Firestore | null {
   if (firestoreInstance) return firestoreInstance;
 
   try {
-    const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-    if (!fs.existsSync(configPath)) {
-      console.warn('firebase-applet-config.json not found, skipping Firestore initialization.');
-      return null;
+    if (process.env.FIREBASE_CONFIG) {
+      try {
+        firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG);
+      } catch (e) {}
     }
 
-    firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    if (!firebaseConfig) {
+      try {
+        const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+        if (fs.existsSync(configPath)) {
+          firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        }
+      } catch (e) {
+        // Filesystem read may fail in serverless bundle
+      }
+    }
+
+    if (!firebaseConfig) {
+      firebaseConfig = BUILTIN_FIREBASE_CONFIG;
+    }
+
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
     if (firebaseConfig.firestoreDatabaseId) {
