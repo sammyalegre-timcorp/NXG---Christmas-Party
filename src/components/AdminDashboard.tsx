@@ -3,6 +3,7 @@ import {
   Award,
   BarChart3,
   Calendar,
+  Check,
   CheckCircle,
   Clock,
   Download,
@@ -25,7 +26,7 @@ import {
   ExternalLink,
   ChevronRight,
 } from 'lucide-react';
-import type { AdminDataResponse, Poll, PollOption } from '../types.ts';
+import type { AdminDataResponse, Poll, PollOption, VoterResponse } from '../types.ts';
 import { NexusguardLogo } from './NexusguardLogo.tsx';
 import {
   fetchAdminDataDirect,
@@ -33,6 +34,8 @@ import {
   directDeletePoll,
   directSaveConfig,
   directClearAllVotes,
+  directDeleteVoter,
+  directUpdateVoter,
 } from '../clientDirectFirestore.ts';
 
 const PHOTO_PRESETS = [
@@ -78,6 +81,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
 
   // Clear votes modal
   const [showClearModal, setShowClearModal] = useState(false);
+
+  // Voter Entry Edit & Delete state
+  const [editingVoter, setEditingVoter] = useState<VoterResponse | null>(null);
+  const [editVoterName, setEditVoterName] = useState('');
+  const [editVoterVotes, setEditVoterVotes] = useState<Record<string, string>>({});
+  const [isSavingVoter, setIsSavingVoter] = useState(false);
+  const [deletingVoter, setDeletingVoter] = useState<VoterResponse | null>(null);
+  const [isDeletingVoter, setIsDeletingVoter] = useState(false);
 
   const fetchAdminData = async () => {
     try {
@@ -388,6 +399,81 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
       fetchAdminData();
     } catch (err: any) {
       showMessage(err.message || 'Error clearing votes', 'error');
+    }
+  };
+
+  // Voter Entry Edit & Delete Handlers
+  const handleOpenEditVoter = (voter: VoterResponse) => {
+    setEditingVoter(voter);
+    setEditVoterName(voter.voterName);
+    setEditVoterVotes({ ...voter.votes });
+  };
+
+  const handleSaveVoterEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingVoter) return;
+    if (!editVoterName.trim()) {
+      showMessage('Voter name cannot be empty', 'error');
+      return;
+    }
+
+    try {
+      setIsSavingVoter(true);
+      const cleanName = editVoterName.trim();
+      let updated = false;
+
+      const payload = {
+        voterName: cleanName,
+        votes: editVoterVotes,
+      };
+
+      try {
+        const res = await fetch(`/api/admin/voters/${editingVoter.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) updated = true;
+      } catch (e) {}
+
+      if (!updated) {
+        await directUpdateVoter(editingVoter.id, payload);
+      }
+
+      showMessage(`Ballot for "${cleanName}" was successfully updated!`);
+      setEditingVoter(null);
+      fetchAdminData();
+    } catch (err: any) {
+      showMessage(err.message || 'Error updating voter entry', 'error');
+    } finally {
+      setIsSavingVoter(false);
+    }
+  };
+
+  const handleConfirmDeleteVoter = async () => {
+    if (!deletingVoter) return;
+    try {
+      setIsDeletingVoter(true);
+      let deleted = false;
+
+      try {
+        const res = await fetch(`/api/admin/voters/${deletingVoter.id}`, {
+          method: 'DELETE',
+        });
+        if (res.ok) deleted = true;
+      } catch (e) {}
+
+      if (!deleted) {
+        await directDeleteVoter(deletingVoter.id);
+      }
+
+      showMessage(`Voter entry for "${deletingVoter.voterName}" deleted successfully.`);
+      setDeletingVoter(null);
+      fetchAdminData();
+    } catch (err: any) {
+      showMessage(err.message || 'Error deleting voter entry', 'error');
+    } finally {
+      setIsDeletingVoter(false);
     }
   };
 
@@ -917,6 +1003,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
                           {data?.polls.length === 1 ? 'Selected Giveaway Option' : poll.title}
                         </th>
                       ))}
+                      <th className="py-3.5 px-4 text-right min-w-[140px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-emerald-900/40 text-slate-200">
@@ -966,6 +1053,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
                               </td>
                             );
                           })}
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditVoter(voter)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-400/25 hover:border-amber-400 transition-colors"
+                                title={`Edit entry for ${voter.voterName}`}
+                              >
+                                <Edit2 className="h-3 w-3" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeletingVoter(voter)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-950/40 px-2.5 py-1 text-[11px] font-semibold text-red-300 hover:bg-red-900/60 hover:border-red-400 transition-colors"
+                                title={`Delete entry for ${voter.voterName}`}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}
@@ -1485,6 +1594,231 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
                 className="rounded-xl bg-red-600 px-5 py-2 text-xs font-bold text-white hover:bg-red-500 shadow-md shadow-red-950/50"
               >
                 Yes, Reset All Votes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Voter Ballot Entry */}
+      {editingVoter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-amber-400/40 bg-[#0f241a] shadow-2xl overflow-hidden">
+            {/* Sticky Header */}
+            <div className="flex items-center justify-between border-b border-emerald-800/60 bg-[#0f241a] px-6 py-4 shrink-0">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-serif text-lg font-bold text-white">
+                    Edit Voter Ballot Entry
+                  </h3>
+                  <span className="rounded bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-400/30">
+                    ID: {editingVoter.id.slice(0, 14)}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Update voter full name or modify selections for recorded giveaway polls.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingVoter(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-emerald-900/60 hover:text-white transition-colors"
+                title="Close modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSaveVoterEdit} className="flex flex-1 flex-col overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+                {/* Voter Name Field */}
+                <div className="rounded-xl border border-emerald-800/60 bg-[#0a1811] p-4 space-y-2">
+                  <label className="block font-bold uppercase tracking-wider text-emerald-300 text-[11px]">
+                    Voter Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editVoterName}
+                    onChange={(e) => setEditVoterName(e.target.value)}
+                    placeholder="e.g. Juan dela Cruz"
+                    className="w-full rounded-xl border border-emerald-800 bg-[#07120c] px-3.5 py-2.5 text-sm text-white focus:border-amber-400 focus:outline-none"
+                  />
+                  <p className="text-[11px] text-slate-400">
+                    Modifying this name updates their registered identity while keeping this ballot linked.
+                  </p>
+                </div>
+
+                {/* Poll Selections */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold uppercase tracking-wider text-emerald-300 text-[11px]">
+                      Selected Poll Choices ({data?.polls.length ?? 0} Polls)
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      Click any option below to change choice
+                    </span>
+                  </div>
+
+                  {(data?.polls || []).map((poll, pIdx) => {
+                    const selectedOptionId = editVoterVotes[poll.id];
+                    return (
+                      <div
+                        key={poll.id}
+                        className="rounded-xl border border-emerald-800/60 bg-[#0a1811] p-4 space-y-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-900 text-[10px] font-bold text-emerald-300">
+                              {pIdx + 1}
+                            </span>
+                            <h4 className="font-semibold text-white text-xs sm:text-sm">
+                              {poll.title}
+                            </h4>
+                          </div>
+                          {poll.category && (
+                            <span className="rounded bg-emerald-950 px-2 py-0.5 text-[10px] text-emerald-300 border border-emerald-800">
+                              {poll.category}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {poll.options.map((opt) => {
+                            const isSelected = selectedOptionId === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() =>
+                                  setEditVoterVotes((prev) => ({
+                                    ...prev,
+                                    [poll.id]: opt.id,
+                                  }))
+                                }
+                                className={`flex items-start gap-2.5 rounded-xl border p-2.5 text-left transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'border-amber-400 bg-amber-950/30 ring-1 ring-amber-400/50 text-amber-200'
+                                    : 'border-emerald-900/60 bg-[#07120c] hover:border-emerald-700/80 hover:bg-[#0c1f14] text-slate-300'
+                                }`}
+                              >
+                                {opt.imageUrl && (
+                                  <img
+                                    src={opt.imageUrl}
+                                    alt={opt.text}
+                                    className="h-11 w-11 shrink-0 rounded-lg object-cover border border-emerald-800 bg-[#06110a]"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span
+                                      className={`text-xs font-semibold truncate ${
+                                        isSelected ? 'text-amber-200' : 'text-slate-200'
+                                      }`}
+                                    >
+                                      {opt.text}
+                                    </span>
+                                    {isSelected && (
+                                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-400 text-slate-950">
+                                        <Check className="h-3 w-3 stroke-[3]" />
+                                      </span>
+                                    )}
+                                  </div>
+                                  {opt.badge && (
+                                    <span className="mt-1 inline-block rounded bg-emerald-950/90 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300 border border-emerald-800/80">
+                                      {opt.badge}
+                                    </span>
+                                  )}
+                                  {opt.description && (
+                                    <p className="mt-0.5 text-[10px] text-slate-400 line-clamp-2">
+                                      {opt.description}
+                                    </p>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Sticky Footer */}
+              <div className="flex items-center justify-end gap-2.5 border-t border-emerald-800/60 bg-[#0c1c14] px-6 py-3.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setEditingVoter(null)}
+                  className="rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingVoter}
+                  className="flex items-center gap-1.5 rounded-xl border border-amber-400/40 bg-gradient-to-r from-red-600 to-amber-500 px-5 py-2 text-xs font-bold text-white shadow-md hover:brightness-110 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingVoter && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{isSavingVoter ? 'Saving Changes...' : 'Save Ballot Changes'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirm Delete Single Voter Entry */}
+      {deletingVoter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-red-500/50 bg-[#160b0d] p-6 shadow-2xl">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-600/20 text-red-400 border border-red-500/40">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <h3 className="mt-3 font-serif text-lg font-bold text-white text-center">
+              Delete Voter Entry?
+            </h3>
+            <p className="mt-2 text-xs text-red-200/90 text-center">
+              Are you sure you want to delete the ballot submitted by{' '}
+              <span className="font-bold text-amber-300">"{deletingVoter.voterName}"</span>?
+            </p>
+            <div className="mt-3 rounded-xl border border-red-900/60 bg-[#241014] p-3 text-left text-[11px] text-slate-300 space-y-1">
+              <div className="text-slate-400 font-medium text-[10px] uppercase tracking-wider">
+                Recorded Selections:
+              </div>
+              {(data?.polls || []).map((p) => {
+                const optId = deletingVoter.votes[p.id];
+                const opt = p.options.find((o) => o.id === optId);
+                return (
+                  <div key={p.id} className="flex items-center justify-between text-xs py-0.5">
+                    <span className="text-slate-400 truncate max-w-[160px]">{p.title}:</span>
+                    <span className="font-semibold text-amber-200 truncate">{opt ? opt.text : '—'}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-[11px] text-slate-400 text-center">
+              This will permanently purge this ballot from tallies and allow this employee to submit a new vote.
+            </p>
+            <div className="mt-6 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                disabled={isDeletingVoter}
+                onClick={() => setDeletingVoter(null)}
+                className="rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800 disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingVoter}
+                onClick={handleConfirmDeleteVoter}
+                className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2 text-xs font-bold text-white hover:bg-red-500 shadow-md shadow-red-950/50 disabled:opacity-50 cursor-pointer"
+              >
+                {isDeletingVoter && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                <span>{isDeletingVoter ? 'Deleting...' : 'Yes, Delete Entry'}</span>
               </button>
             </div>
           </div>

@@ -222,3 +222,34 @@ export async function clearAllVotersFromFirestore(voterIds: string[]): Promise<v
     console.error('Failed to clear votes from Firestore:', err?.message || err);
   }
 }
+
+/**
+ * Deletes a single voter entry from Firebase Firestore
+ */
+export async function removeVoterFromFirestore(voterId: string): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  try {
+    await deleteDoc(doc(db, 'voters', voterId));
+    console.log(`Deleted voter ${voterId} from Firestore.`);
+  } catch (err: any) {
+    console.error(`Failed to delete voter ${voterId} from Firestore:`, err?.message || err);
+  }
+}
+
+/**
+ * Updates a single voter entry in Firebase Firestore
+ */
+export async function updateVoterInFirestore(voter: VoterResponse): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  try {
+    await setDoc(doc(db, 'voters', voter.id), voter);
+    console.log(`Updated voter ${voter.id} (${voter.voterName}) in Firestore.`);
+  } catch (err: any) {
+    console.error(`Failed to update voter ${voter.id} in Firestore:`, err?.message || err);
+  }
+}
+

@@ -14,6 +14,8 @@ import {
   removePollFromFirestore,
   persistConfigToFirestore,
   clearAllVotersFromFirestore,
+  removeVoterFromFirestore,
+  updateVoterInFirestore,
 } from './firebaseDb.ts';
 
 interface DatabaseSchema {
@@ -489,6 +491,59 @@ apiRouter.post('/admin/clear-votes', (req, res) => {
   saveDatabase(db);
   clearAllVotersFromFirestore(voterIds).catch((e) => console.error('Firestore clear votes error:', e));
   res.json({ success: true, message: 'All votes have been cleared.' });
+});
+
+// 9a. Admin Delete Single Voter Entry
+apiRouter.delete('/admin/voters/:id', (req, res) => {
+  const { id } = req.params;
+  const voterIndex = db.voters.findIndex((v) => v.id === id);
+  if (voterIndex === -1) {
+    return res.status(404).json({ error: 'Voter entry not found.' });
+  }
+
+  const deletedVoter = db.voters[voterIndex];
+  db.voters = db.voters.filter((v) => v.id !== id);
+  saveDatabase(db);
+  removeVoterFromFirestore(id).catch((e) => console.error('Firestore voter delete error:', e));
+
+  res.json({
+    success: true,
+    message: `Voter entry for "${deletedVoter.voterName}" was successfully deleted.`,
+  });
+});
+
+// 9b. Admin Edit / Update Single Voter Entry
+apiRouter.put('/admin/voters/:id', (req, res) => {
+  const { id } = req.params;
+  const voterIndex = db.voters.findIndex((v) => v.id === id);
+  if (voterIndex === -1) {
+    return res.status(404).json({ error: 'Voter entry not found.' });
+  }
+
+  const { voterName, votes } = req.body;
+  if (!voterName || typeof voterName !== 'string' || !voterName.trim()) {
+    return res.status(400).json({ error: 'A valid voter name is required.' });
+  }
+
+  const trimmedName = voterName.trim();
+  const current = db.voters[voterIndex];
+
+  const updatedVoter: VoterResponse = {
+    ...current,
+    voterName: trimmedName,
+    voterIdentifier: trimmedName.toLowerCase(),
+    votes: votes && typeof votes === 'object' ? votes : current.votes,
+  };
+
+  db.voters[voterIndex] = updatedVoter;
+  saveDatabase(db);
+  updateVoterInFirestore(updatedVoter).catch((e) => console.error('Firestore voter update error:', e));
+
+  res.json({
+    success: true,
+    voter: updatedVoter,
+    message: `Voter entry for "${trimmedName}" updated successfully.`,
+  });
 });
 
 // 10. Admin Export CSV Individual

@@ -337,4 +337,32 @@ export async function directCheckVoter(name: string): Promise<{
   return { hasVoted: false };
 }
 
+export async function directDeleteVoter(voterId: string): Promise<void> {
+  const db = getClientFirestore();
+  await deleteDoc(doc(db, 'voters', voterId));
+}
+
+export async function directUpdateVoter(
+  voterId: string,
+  updatedData: { voterName: string; votes: Record<string, string> }
+): Promise<VoterResponse> {
+  const db = getClientFirestore();
+  const voterDocRef = doc(db, 'voters', voterId);
+  const snap = await getDoc(voterDocRef);
+  if (!snap.exists()) {
+    throw new Error('Voter entry not found.');
+  }
+  const current = snap.data() as VoterResponse;
+  const trimmedName = updatedData.voterName.trim();
+  const updatedVoter: VoterResponse = {
+    ...current,
+    voterName: trimmedName,
+    voterIdentifier: trimmedName.toLowerCase(),
+    votes: updatedData.votes,
+  };
+  await setDoc(voterDocRef, updatedVoter);
+  return updatedVoter;
+}
+
+
 
