@@ -1,6 +1,6 @@
 {
   "name": "Christmas Giveaway Polls",
-  "description": "Christmas giveaway voting app with countdown to September 18, 6:00 PM PST, single-vote verification, and administrative tally management.",
+  "description": "Nexusguard Christmas celebration and year-end polls app with multi-poll voting, countdown to September 18, 6:00 PM PST, single-vote verification, and administrative tally management.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

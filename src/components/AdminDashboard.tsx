@@ -26,6 +26,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import type { AdminDataResponse, Poll, PollOption } from '../types.ts';
+import { NexusguardLogo } from './NexusguardLogo.tsx';
 import {
   fetchAdminDataDirect,
   directSavePoll,
@@ -492,23 +493,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToMain
   return (
     <div className="min-h-screen bg-[#0a1511] text-slate-100 pb-20">
       {/* Top Admin Header */}
-      <header className="sticky top-0 z-30 border-b border-amber-500/20 bg-[#0c1c15]/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
+      <header className="sticky top-0 z-30 border-b border-[#EB5624]/30 bg-[#0e141a]/95 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-400/40 bg-gradient-to-tr from-red-600 to-amber-500 shadow-md">
-              <Gift className="h-5 w-5 text-white" />
-            </div>
+            <NexusguardLogo size="sm" variant="white" />
+            <div className="h-6 w-px bg-slate-700 mx-1 hidden sm:block" />
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-serif text-lg font-bold text-white sm:text-xl">
+                <h1 className="text-base font-bold text-white sm:text-lg">
                   Christmas Poll Admin
                 </h1>
-                <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-400/30 uppercase tracking-wide">
-                  Secret Admin Portal
+                <span className="rounded-full bg-[#EB5624]/10 px-2 py-0.5 text-[10px] font-bold text-[#FF7A45] border border-[#EB5624]/40 uppercase tracking-wide">
+                  Secret Committee Portal
                 </span>
               </div>
-              <p className="text-xs text-emerald-300/80">
-                Official Giveaway Tallies, Entries &amp; Poll Management
+              <p className="text-xs text-slate-400">
+                Official Giveaway &amp; Theme Tallies, Entries &amp; Poll Management
               </p>
             </div>
           </div>

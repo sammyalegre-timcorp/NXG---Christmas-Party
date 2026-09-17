@@ -29,9 +29,9 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 const DEFAULT_CONFIG: AppConfig = {
   deadlinePST: '2026-09-18T18:00:00+08:00',
   deadlineLabel: 'September 18, 6:00 PM PST (Philippine Standard Time)',
-  eventTitle: 'Christmas Giveaway Poll',
-  eventSubtitle: 'Vote for your preferred Christmas giveaway item. Choose one option below!',
-  companyName: 'Holiday Cheer Committee',
+  eventTitle: 'Nexusguard Christmas Celebration & Year-End Polls',
+  eventSubtitle: 'Vote for your preferred Christmas giveaway item and party theme. Choose one option for each poll below!',
+  companyName: 'Nexusguard Holiday Committee',
 };
 
 const DEFAULT_POLLS: Poll[] = [
@@ -99,6 +99,45 @@ const DEFAULT_POLLS: Poll[] = [
         description: 'Cafe-grade espresso, cappuccinos, and lattes brewed in seconds at home.',
         badge: 'Coffee Barista',
         imageUrl: 'https://images.unsplash.com/photo-1517668808822-9ebb02f2a0e6?w=600&auto=format&fit=crop&q=80',
+      },
+    ],
+  },
+  {
+    id: 'poll-1789532626975',
+    title: 'Choose your preferred Christmas Theme',
+    description: 'Vote for your favorite holiday celebration theme. Select one choice below!',
+    category: 'Christmas Theme',
+    active: true,
+    order: 2,
+    createdAt: new Date().toISOString(),
+    options: [
+      {
+        id: 'opt-1789532626975-1',
+        text: 'Cowboy',
+        description: 'Wild West holiday boots, hats, denim, and barn dance atmosphere.',
+        badge: 'Western',
+        imageUrl: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=600&auto=format&fit=crop&q=80',
+      },
+      {
+        id: 'opt-1789532626975-2',
+        text: 'Iconic Christmas Character',
+        description: 'Dress as Santa, Mrs. Claus, the Grinch, Jack Frost, or Rudolph.',
+        badge: 'Festive Costume',
+        imageUrl: 'https://images.unsplash.com/photo-1543258103-a62bdc069871?w=600&auto=format&fit=crop&q=80',
+      },
+      {
+        id: 'opt-1789532626975-3',
+        text: 'Retro Glam',
+        description: 'Dazzling 70s/80s glitz, sequins, disco ball sparkle, and gold accents.',
+        badge: 'Vintage Party',
+        imageUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=600&auto=format&fit=crop&q=80',
+      },
+      {
+        id: 'opt-1789532626975-4',
+        text: 'World Cup',
+        description: 'Represent your favorite national team jersey, stadium fan energy, and trophy glory.',
+        badge: 'Sports Arena',
+        imageUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&auto=format&fit=crop&q=80',
       },
     ],
   },

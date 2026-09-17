@@ -9,101 +9,101 @@
   "polls": [
     {
       "order": 1,
-      "createdAt": "2026-09-16T00:00:00.000Z",
-      "category": "Christmas Giveaway",
-      "id": "poll-giveaway",
-      "title": "Christmas Giveaway Poll",
-      "description": "Vote for your preferred Christmas giveaway item. Choose one option below!",
-      "active": false,
       "options": [
         {
-          "badge": "Gadget",
           "text": "Apple iPad Air Bundle with Apple Pencil",
-          "id": "opt-1",
-          "description": "Latest model iPad with Apple Pencil for digital notes, art, and entertainment."
+          "description": "Latest model iPad with Apple Pencil for digital notes, art, and entertainment.",
+          "badge": "Gadget",
+          "id": "opt-1"
         },
         {
           "id": "opt-2",
+          "badge": "Home Appliance",
           "text": "55\" Samsung 4K Smart UHD TV",
-          "description": "Ultra-vibrant 4K cinema display for holiday family movies and entertainment.",
-          "badge": "Home Appliance"
+          "description": "Ultra-vibrant 4K cinema display for holiday family movies and entertainment."
         },
         {
-          "description": "Flexible universal vouchers for pure holiday shopping or family groceries.",
           "id": "opt-3",
           "text": "₱25,000 Puregold / SM Shopping & Grocery Spree",
-          "badge": "Gift Vouchers"
+          "badge": "Gift Vouchers",
+          "description": "Flexible universal vouchers for pure holiday shopping or family groceries."
         },
         {
           "text": "Dyson Supersonic Hair Dryer / Luxury Styler",
-          "badge": "Lifestyle",
+          "id": "opt-4",
           "description": "Engineered for all hair types with intelligent heat control protection.",
-          "id": "opt-4"
+          "badge": "Lifestyle"
         },
         {
+          "description": "Next-gen gaming with DualSense wireless controller and games.",
           "text": "PlayStation 5 Console Gaming Bundle",
-          "badge": "Gaming",
           "id": "opt-5",
-          "description": "Next-gen gaming with DualSense wireless controller and games."
+          "badge": "Gaming"
         },
         {
-          "id": "opt-6",
           "badge": "Holiday Feast",
           "text": "Gourmet Noche Buena Feast Hamper & Wine",
-          "description": "Smoked Christmas ham, aged Queso de Bola, imported pasta, panettone, and sparkling wine."
+          "description": "Smoked Christmas ham, aged Queso de Bola, imported pasta, panettone, and sparkling wine.",
+          "id": "opt-6"
         },
         {
-          "text": "Sony Noise-Cancelling Wireless Headphones",
           "id": "opt-7",
           "description": "Industry-leading noise cancellation, crystal-clear calls, and 30-hour battery.",
-          "badge": "Audio"
+          "badge": "Audio",
+          "text": "Sony Noise-Cancelling Wireless Headphones"
         },
         {
           "text": "Nespresso Compact Espresso Machine & Frother",
-          "id": "opt-8",
           "badge": "Coffee Barista",
-          "description": "Cafe-grade espresso, cappuccinos, and lattes brewed in seconds at home."
+          "description": "Cafe-grade espresso, cappuccinos, and lattes brewed in seconds at home.",
+          "id": "opt-8"
         }
-      ]
+      ],
+      "category": "Christmas Giveaway",
+      "createdAt": "2026-09-16T00:00:00.000Z",
+      "active": true,
+      "title": "Christmas Giveaway Poll",
+      "description": "Vote for your preferred Christmas giveaway item. Choose one option below!",
+      "id": "poll-giveaway"
     },
     {
-      "createdAt": "2026-09-16T04:23:46.975Z",
-      "order": 2,
-      "active": true,
+      "id": "poll-1789532626975",
       "category": "Christmas Theme",
       "title": "Choose your preferred Christmas Theme",
+      "order": 2,
+      "description": "Vote for your favorite holiday celebration theme. Select one choice below!",
+      "createdAt": "2026-09-16T04:23:46.975Z",
+      "active": true,
       "options": [
         {
+          "imageUrl": "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=600&auto=format&fit=crop&q=80",
+          "description": "Wild West holiday boots, hats, denim, and barn dance atmosphere.",
           "id": "opt-1789532626975-1",
           "text": "Cowboy",
-          "description": "Wild West holiday boots, hats, denim, and barn dance atmosphere.",
-          "badge": "Western",
-          "imageUrl": "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=600&auto=format&fit=crop&q=80"
+          "badge": "Western"
         },
         {
-          "id": "opt-1789532626975-2",
-          "text": "Iconic Christmas Character",
           "description": "Dress as Santa, Mrs. Claus, the Grinch, Jack Frost, or Rudolph.",
           "badge": "Festive Costume",
-          "imageUrl": "https://images.unsplash.com/photo-1543258103-a62bdc069871?w=600&auto=format&fit=crop&q=80"
+          "imageUrl": "https://images.unsplash.com/photo-1543258103-a62bdc069871?w=600&auto=format&fit=crop&q=80",
+          "id": "opt-1789532626975-2",
+          "text": "Iconic Christmas Character"
         },
         {
-          "id": "opt-1789532626975-3",
+          "imageUrl": "https://images.unsplash.com/photo-1519741497674-611481863552?w=600&auto=format&fit=crop&q=80",
           "text": "Retro Glam",
           "description": "Dazzling 70s/80s glitz, sequins, disco ball sparkle, and gold accents.",
           "badge": "Vintage Party",
-          "imageUrl": "https://images.unsplash.com/photo-1519741497674-611481863552?w=600&auto=format&fit=crop&q=80"
+          "id": "opt-1789532626975-3"
         },
         {
-          "id": "opt-1789532626975-4",
-          "text": "World Cup",
-          "description": "Represent your favorite national team jersey, stadium fan energy, and trophy glory.",
           "badge": "Sports Arena",
-          "imageUrl": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&auto=format&fit=crop&q=80"
+          "description": "Represent your favorite national team jersey, stadium fan energy, and trophy glory.",
+          "imageUrl": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&auto=format&fit=crop&q=80",
+          "text": "World Cup",
+          "id": "opt-1789532626975-4"
         }
-      ],
-      "description": "Vote for your favorite holiday celebration theme. Select one choice below!",
-      "id": "poll-1789532626975"
+      ]
     }
   ],
   "voters": []

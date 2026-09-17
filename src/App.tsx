@@ -3,20 +3,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import confetti from 'canvas-confetti';
 import {
   AlertCircle,
+  ArrowRight,
   Check,
   CheckCircle2,
   Gift,
+  HelpCircle,
   Image as ImageIcon,
   Lock,
   Maximize2,
   Send,
+  ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Tag,
   User,
+  UserCheck,
   X,
 } from 'lucide-react';
 import { Snowfall } from './components/Snowfall.tsx';
@@ -24,8 +29,9 @@ import { ChristmasCountdown } from './components/ChristmasCountdown.tsx';
 import { FestiveHeader } from './components/FestiveHeader.tsx';
 import { VoterConfirmedView } from './components/VoterConfirmedView.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
+import { NexusguardLogo } from './components/NexusguardLogo.tsx';
 import type { AppConfig, Poll, PublicPollsResponse } from './types.ts';
-import { fetchAdminDataDirect, directSubmitVote } from './clientDirectFirestore.ts';
+import { fetchAdminDataDirect, directSubmitVote, directCheckVoter } from './clientDirectFirestore.ts';
 
 function checkIsAdminRoute(): boolean {
   if (typeof window === 'undefined') return false;
@@ -41,26 +47,50 @@ function checkIsAdminRoute(): boolean {
 }
 
 export default function App() {
-  // Routing: check if user accessed "/admin" (via path, hash, or query)
+  // Routing: check if committee accessed "/admin"
   const [isAdminRoute, setIsAdminRoute] = useState<boolean>(checkIsAdminRoute);
 
   // Polls & Config data
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [poll, setPoll] = useState<Poll | null>(null);
+  const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // Single-tile form state
+  // Multi-poll vote state: pollId -> optionId
+  const [selectedVotes, setSelectedVotes] = useState<Record<string, string>>({});
   const [voterName, setVoterName] = useState('');
-  const [selectedOptionId, setSelectedOptionId] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Already voted state
+  // Single-vote real-time verification state
+  const [nameCheckLoading, setNameCheckLoading] = useState(false);
+  const [nameAlreadyVotedInfo, setNameAlreadyVotedInfo] = useState<{
+    alreadyVoted: boolean;
+    voterName?: string;
+    timestamp?: string;
+    votes?: Record<string, string>;
+  }>({ alreadyVoted: false });
+
+  // Confirmed vote state
   const [hasVoted, setHasVoted] = useState(false);
   const [confirmedVoterName, setConfirmedVoterName] = useState('');
   const [confirmedTimestamp, setConfirmedTimestamp] = useState('');
+  const [confirmedVotes, setConfirmedVotes] = useState<Record<string, string>>({});
+
+  // Lightbox / Image Zoom modal
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+
+  // Active polls only
+  const activePolls = useMemo(() => {
+    return polls.filter((p) => p.active).sort((a, b) => (a.order || 1) - (b.order || 1));
+  }, [polls]);
+
+  // Number of answered polls
+  const answeredCount = useMemo(() => {
+    return activePolls.filter((p) => !!selectedVotes[p.id]).length;
+  }, [activePolls, selectedVotes]);
+
+  const allPollsAnswered = activePolls.length > 0 && answeredCount === activePolls.length;
 
   // Handle URL path & hash changes
   useEffect(() => {
@@ -76,11 +106,13 @@ export default function App() {
     };
   }, []);
 
-  // Fetch poll data on mount
+  // Fetch all polls data on mount
   const fetchPolls = async () => {
     try {
       setLoading(true);
+      setFetchError(null);
       let data: PublicPollsResponse | null = null;
+
       try {
         const res = await fetch('/api/public-polls');
         if (res.ok) {
@@ -93,27 +125,35 @@ export default function App() {
         console.warn('API fetch /api/public-polls failed, falling back to direct Firestore:', e);
       }
 
-      // If backend API not reachable (e.g. pure static Vercel deployment), query Firestore directly
-      if (!data) {
+      // If backend API not reachable, query Firestore directly
+      if (!data || !data.polls || data.polls.length === 0) {
         const directData = await fetchAdminDataDirect();
         data = {
           config: directData.config,
-          polls: directData.polls.filter((p) => p.active),
+          polls: directData.polls,
         };
       }
 
       if (data) {
-        setConfig(data.config);
-        if (data.polls && data.polls.length > 0) {
-          setPoll(data.polls[0]);
+        if (data.config) setConfig(data.config);
+        if (data.polls && Array.isArray(data.polls)) {
+          setPolls(data.polls);
         }
       }
 
       // Check if user previously voted on this device
-      const storedName = localStorage.getItem('christmas_giveaway_voter_name');
-      const storedTimestamp = localStorage.getItem('christmas_giveaway_timestamp');
+      const storedName = localStorage.getItem('nexusguard_voter_name') || localStorage.getItem('christmas_giveaway_voter_name');
+      const storedTimestamp = localStorage.getItem('nexusguard_voter_timestamp') || localStorage.getItem('christmas_giveaway_timestamp');
+      const storedVotesRaw = localStorage.getItem('nexusguard_voter_votes');
 
       if (storedName) {
+        let storedVotes: Record<string, string> = {};
+        if (storedVotesRaw) {
+          try {
+            storedVotes = JSON.parse(storedVotesRaw);
+          } catch (e) {}
+        }
+
         try {
           const checkRes = await fetch(`/api/check-voter?name=${encodeURIComponent(storedName)}`);
           if (checkRes.ok) {
@@ -122,20 +162,24 @@ export default function App() {
               setHasVoted(true);
               setConfirmedVoterName(checkData.voterName || storedName);
               setConfirmedTimestamp(checkData.timestamp || storedTimestamp || '');
+              if (checkData.votes) setConfirmedVotes(checkData.votes);
+              else setConfirmedVotes(storedVotes);
             } else {
-              localStorage.removeItem('christmas_giveaway_voter_name');
-              localStorage.removeItem('christmas_giveaway_timestamp');
+              localStorage.removeItem('nexusguard_voter_name');
+              localStorage.removeItem('nexusguard_voter_timestamp');
+              localStorage.removeItem('nexusguard_voter_votes');
             }
           }
         } catch (e) {
           setHasVoted(true);
           setConfirmedVoterName(storedName);
           setConfirmedTimestamp(storedTimestamp || '');
+          setConfirmedVotes(storedVotes);
         }
       }
     } catch (err: any) {
       console.error(err);
-      setFetchError(err.message || 'Failed to load poll.');
+      setFetchError(err.message || 'Failed to load polls.');
     } finally {
       setLoading(false);
     }
@@ -145,23 +189,72 @@ export default function App() {
     fetchPolls();
   }, []);
 
+  // Real-time verification: check if entered name has already voted so they can only vote once
+  useEffect(() => {
+    const trimmed = voterName.trim();
+    if (trimmed.length < 2) {
+      setNameAlreadyVotedInfo({ alreadyVoted: false });
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setNameCheckLoading(true);
+        let checkData: {
+          hasVoted: boolean;
+          voterName?: string;
+          timestamp?: string;
+          votes?: Record<string, string>;
+        } | null = null;
+
+        try {
+          const res = await fetch(`/api/check-voter?name=${encodeURIComponent(trimmed)}`);
+          if (res.ok) {
+            checkData = await res.json();
+          }
+        } catch (e) {}
+
+        if (!checkData) {
+          checkData = await directCheckVoter(trimmed);
+        }
+
+        if (checkData && checkData.hasVoted) {
+          setNameAlreadyVotedInfo({
+            alreadyVoted: true,
+            voterName: checkData.voterName || trimmed,
+            timestamp: checkData.timestamp,
+            votes: checkData.votes,
+          });
+        } else {
+          setNameAlreadyVotedInfo({ alreadyVoted: false });
+        }
+      } catch (e) {
+        // ignore background check error
+      } finally {
+        setNameCheckLoading(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [voterName]);
+
   const triggerFestiveConfetti = () => {
     try {
       const end = Date.now() + 2.5 * 1000;
-      const colors = ['#f59e0b', '#dc2626', '#10b981', '#ffffff', '#fbbf24'];
+      const colors = ['#EB5624', '#FF7A45', '#f59e0b', '#ffffff', '#10b981'];
 
       (function frame() {
         confetti({
-          particleCount: 4,
+          particleCount: 5,
           angle: 60,
-          spread: 55,
+          spread: 60,
           origin: { x: 0 },
           colors: colors,
         });
         confetti({
-          particleCount: 4,
+          particleCount: 5,
           angle: 120,
-          spread: 55,
+          spread: 60,
           origin: { x: 1 },
           colors: colors,
         });
@@ -175,23 +268,50 @@ export default function App() {
     }
   };
 
+  const handleSelectOption = (pollId: string, optionId: string) => {
+    setSelectedVotes((prev) => ({
+      ...prev,
+      [pollId]: optionId,
+    }));
+    setFormError(null);
+  };
+
+  const scrollToPoll = (pollId: string) => {
+    const el = document.getElementById(`poll-card-${pollId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   const handleSubmitVote = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
     const cleanName = voterName.trim();
     if (!cleanName || cleanName.length < 2) {
-      setFormError('Please enter your full name (at least 2 characters) before submitting.');
+      setFormError('Please enter your full name (at least 2 characters) before submitting your ballot.');
       return;
     }
 
-    if (!selectedOptionId) {
-      setFormError('Please select one of the Christmas giveaway options.');
+    if (nameAlreadyVotedInfo.alreadyVoted) {
+      setFormError(
+        `A vote has already been submitted under the name "${cleanName}". Each Nexusguard team member may only vote once.`
+      );
       return;
     }
 
-    if (!poll) {
-      setFormError('Poll data is not loaded.');
+    if (activePolls.length === 0) {
+      setFormError('No active polls are currently open.');
+      return;
+    }
+
+    // Ensure all active polls have an option selected
+    const missingPolls = activePolls.filter((p) => !selectedVotes[p.id]);
+    if (missingPolls.length > 0) {
+      setFormError(
+        `Please select an option for "${missingPolls[0].title}". You have completed ${answeredCount} of ${activePolls.length} polls.`
+      );
+      scrollToPoll(missingPolls[0].id);
       return;
     }
 
@@ -215,7 +335,7 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             voterName: cleanName,
-            votes: { [poll.id]: selectedOptionId },
+            votes: selectedVotes,
           }),
         });
 
@@ -230,35 +350,36 @@ export default function App() {
           }
         }
       } catch (apiErr: any) {
-        // If it was an explicit validation error from backend (like already voted), rethrow
         if (apiErr.message && !apiErr.message.includes('fetch')) {
           throw apiErr;
         }
       }
 
-      // If backend API route was not reachable (e.g. pure static Vercel), save directly to Firestore
+      // If backend API route was not reachable, write directly to Firestore
       if (!voteConfirmed) {
         const directRes = await directSubmitVote(
           cleanName,
-          { [poll.id]: selectedOptionId },
+          selectedVotes,
           config?.deadlinePST
         );
         timestamp = directRes.timestamp;
       }
 
       // Save to localStorage
-      localStorage.setItem('christmas_giveaway_voter_name', cleanName);
-      localStorage.setItem('christmas_giveaway_timestamp', timestamp);
+      localStorage.setItem('nexusguard_voter_name', cleanName);
+      localStorage.setItem('nexusguard_voter_timestamp', timestamp);
+      localStorage.setItem('nexusguard_voter_votes', JSON.stringify(selectedVotes));
 
       // Show confirmed view
       setConfirmedVoterName(cleanName);
       setConfirmedTimestamp(timestamp);
+      setConfirmedVotes({ ...selectedVotes });
       setHasVoted(true);
 
       // Festive celebration effects
       triggerFestiveConfetti();
     } catch (err: any) {
-      setFormError(err.message || 'An error occurred while submitting your vote.');
+      setFormError(err.message || 'An error occurred while submitting your ballot.');
     } finally {
       setSubmitting(false);
     }
@@ -266,11 +387,13 @@ export default function App() {
 
   // Reset to allow another person on a shared computer
   const handleVoteAgainAsDifferent = () => {
-    localStorage.removeItem('christmas_giveaway_voter_name');
-    localStorage.removeItem('christmas_giveaway_timestamp');
+    localStorage.removeItem('nexusguard_voter_name');
+    localStorage.removeItem('nexusguard_voter_timestamp');
+    localStorage.removeItem('nexusguard_voter_votes');
     setHasVoted(false);
     setVoterName('');
-    setSelectedOptionId('');
+    setSelectedVotes({});
+    setNameAlreadyVotedInfo({ alreadyVoted: false });
     setFormError(null);
   };
 
@@ -287,19 +410,20 @@ export default function App() {
   }
 
   return (
-    <div className="relative min-h-screen bg-[#0a1811] text-[#f4f7f5]">
-      {/* Falling snowflakes background */}
+    <div className="relative min-h-screen bg-[#0c1015] text-[#f4f7f5] selection:bg-[#EB5624] selection:text-white">
+      {/* Subtle festive snowfall */}
       <Snowfall />
 
       {/* Main Container */}
-      <div className="relative z-20 mx-auto max-w-3xl px-4 pb-24 sm:px-6">
-        {/* Festive Header */}
+      <div className="relative z-20 mx-auto max-w-4xl px-4 pb-24 sm:px-6">
+        {/* Top Header with prominent Nexusguard Logo badge */}
         <FestiveHeader
-          eventTitle={config?.eventTitle || 'Christmas Giveaway Poll'}
+          eventTitle={config?.eventTitle || 'Nexusguard Christmas Celebration & Year-End Polls'}
           eventSubtitle={
             config?.eventSubtitle ||
-            'Vote for your preferred Christmas giveaway item. Choose one option below!'
+            'Vote for your preferred Christmas giveaway item and celebration theme. Cast your confidential ballot below!'
           }
+          companyName={config?.companyName || 'Nexusguard Holiday Committee'}
         />
 
         {/* Countdown Banner */}
@@ -313,290 +437,619 @@ export default function App() {
           />
         </div>
 
-        {/* Content Area: Single Tile Poll OR Confirmed Screen */}
+        {/* Content Area */}
         <div className="mt-8">
           {loading ? (
-            <div className="rounded-2xl border border-emerald-800/40 bg-[#10241b] p-12 text-center shadow-xl">
-              <Gift className="mx-auto h-10 w-10 text-amber-400 animate-bounce" />
-              <p className="mt-3 font-serif text-lg font-bold text-white">
-                Loading Giveaway Options...
+            <div className="rounded-2xl border border-slate-700/60 bg-[#131920] p-12 text-center shadow-xl">
+              <Gift className="mx-auto h-10 w-10 text-[#EB5624] animate-bounce" />
+              <p className="mt-3 text-lg font-black text-white">
+                Loading Nexusguard Polls...
               </p>
-              <p className="mt-1 text-xs text-emerald-300/80">
-                Fetching holiday ballot &amp; countdown status
+              <p className="mt-1 text-xs text-slate-400">
+                Synchronizing giveaway options and celebration themes
               </p>
             </div>
           ) : fetchError ? (
             <div className="rounded-2xl border border-red-500/40 bg-red-950/60 p-8 text-center text-red-200 shadow-xl">
               <AlertCircle className="mx-auto h-8 w-8 text-red-400" />
               <h3 className="mt-2 text-base font-bold text-white">
-                Unable to Load Poll
+                Unable to Load Polls
               </h3>
               <p className="mt-1 text-xs text-red-300">{fetchError}</p>
               <button
+                type="button"
                 onClick={fetchPolls}
-                className="mt-4 rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-500"
+                className="mt-4 rounded-xl bg-[#EB5624] px-4 py-2 text-xs font-bold text-white hover:bg-[#FF7A45] transition-colors"
               >
                 Retry
               </button>
             </div>
           ) : hasVoted ? (
-            /* Results remain confidential - only admin can see */
+            /* Results remain confidential - only admin can view tallies */
             <VoterConfirmedView
               voterName={confirmedVoterName}
               votedAt={confirmedTimestamp}
+              polls={activePolls}
+              votes={confirmedVotes}
               onVoteAgainAsDifferentPerson={handleVoteAgainAsDifferent}
             />
-          ) : poll ? (
-            /* THE SINGLE TILE WITH MULTIPLE OPTIONS */
-            <form
-              onSubmit={handleSubmitVote}
-              className="relative overflow-hidden rounded-3xl border border-amber-400/40 bg-gradient-to-b from-[#142e22] via-[#0f2319] to-[#0a1711] p-6 shadow-2xl sm:p-8"
-            >
-              {/* Top ribbon border */}
-              <div className="absolute top-0 left-0 h-2 w-full bg-gradient-to-r from-red-600 via-amber-400 to-emerald-500" />
+          ) : activePolls.length > 0 ? (
+            /* MULTIPLE POLLS VOTING FLOW */
+            <form onSubmit={handleSubmitVote} className="space-y-8">
+              {/* STICKY BALLOT PROGRESS & VOTER STATUS BAR */}
+              <div className="sticky top-4 z-30 rounded-2xl border border-[#EB5624]/40 bg-[#11171f]/95 p-4 shadow-2xl backdrop-blur-md">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <NexusguardLogo size="sm" variant="badge" className="py-1 px-3 shadow-none border-none" />
+                    <span className="hidden sm:inline text-xs text-slate-400 font-medium">
+                      • Official Ballot
+                    </span>
+                  </div>
 
-              {/* Tile Header */}
-              <div className="border-b border-emerald-800/60 pb-5">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-300">
-                    <Gift className="h-3.5 w-3.5 text-red-400" />
-                    <span>Official Giveaway Ballot</span>
-                  </span>
-                  <span className="text-xs text-emerald-300/80">• One Vote Per Person</span>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className="text-xs font-bold text-white">
+                        Progress: <span className="text-[#EB5624]">{answeredCount} of {activePolls.length}</span> Completed
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {voterName.trim().length < 2
+                          ? 'Name entry required'
+                          : nameAlreadyVotedInfo.alreadyVoted
+                          ? '⚠️ Already voted'
+                          : allPollsAnswered
+                          ? '✓ Ready to Submit'
+                          : 'Selections needed'}
+                      </div>
+                    </div>
+
+                    {/* Progress visual bar */}
+                    <div className="h-2.5 w-24 sm:w-36 rounded-full bg-slate-800 overflow-hidden border border-slate-700">
+                      <div
+                        className="h-full bg-gradient-to-r from-[#EB5624] to-[#FF7A45] transition-all duration-300 rounded-full"
+                        style={{
+                          width: `${(answeredCount / activePolls.length) * 100}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <h2 className="mt-2 font-serif text-2xl font-bold text-white sm:text-3xl">
-                  {poll.title}
-                </h2>
-                {poll.description && (
-                  <p className="mt-1 text-xs sm:text-sm text-slate-300/85">
-                    {poll.description}
-                  </p>
-                )}
-              </div>
+                {/* Poll quick-jump pills */}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+                  <div className="flex flex-wrap gap-2">
+                    {activePolls.map((p, idx) => {
+                      const isAnswered = !!selectedVotes[p.id];
+                      const chosenOption = p.options.find((o) => o.id === selectedVotes[p.id]);
 
-              {/* Section 1: Voter Full Name */}
-              <div className="mt-6 rounded-2xl border border-emerald-800/50 bg-[#0d1d16]/90 p-4 sm:p-5">
-                <label
-                  htmlFor="voter-name-field"
-                  className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300"
-                >
-                  <User className="h-3.5 w-3.5 text-amber-400" />
-                  <span>Your Full Name *</span>
-                </label>
-                <p className="mt-1 text-xs text-slate-400">
-                  Required to verify your single vote entry. Each person can only vote once.
-                </p>
-
-                <div className="relative mt-2.5">
-                  <input
-                    id="voter-name-field"
-                    type="text"
-                    required
-                    value={voterName}
-                    onChange={(e) => {
-                      setVoterName(e.target.value);
-                      setFormError(null);
-                    }}
-                    placeholder="e.g. Maria Santos or Juan Dela Cruz"
-                    className="w-full rounded-xl border border-emerald-700/60 bg-[#07130e] px-4 py-3 pl-11 text-sm sm:text-base text-white placeholder:text-slate-500 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 focus:outline-none"
-                  />
-                  <Gift className="pointer-events-none absolute left-3.5 top-3.5 h-4 w-4 text-amber-400" />
-                </div>
-              </div>
-
-              {/* Section 2: Multiple Options inside this single tile */}
-              <div className="mt-6">
-                <div className="flex items-center justify-between pb-3">
-                  <h3 className="font-serif text-base font-bold text-white sm:text-lg">
-                    Select Your Giveaway Choice
-                  </h3>
-                  <span className="text-xs text-amber-300 font-semibold">
-                    {selectedOptionId ? '1 Selected' : 'Choose 1'}
-                  </span>
-                </div>
-
-                <div role="radiogroup" className="space-y-2.5">
-                  {poll.options.map((option) => {
-                    const isSelected = selectedOptionId === option.id;
-
-                    return (
-                      <label
-                        key={option.id}
-                        htmlFor={`opt-${option.id}`}
-                        className={`group relative flex cursor-pointer items-start gap-3.5 rounded-2xl border p-4 transition-all duration-200 ${
-                          isSelected
-                            ? 'border-amber-400 bg-gradient-to-r from-[#1c3c2e] to-[#254938] shadow-lg shadow-amber-950/40 ring-1 ring-amber-400/50'
-                            : 'border-emerald-800/50 bg-[#0d1d16]/90 hover:border-emerald-600 hover:bg-[#13291f]'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          id={`opt-${option.id}`}
-                          name="giveaway-option"
-                          value={option.id}
-                          checked={isSelected}
-                          onChange={() => {
-                            setSelectedOptionId(option.id);
-                            setFormError(null);
-                          }}
-                          className="sr-only"
-                        />
-
-                        {/* Custom Radio Button */}
-                        <div
-                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all ${
-                            isSelected
-                              ? 'border-amber-400 bg-amber-400 text-slate-950'
-                              : 'border-emerald-600/70 bg-emerald-950/60 group-hover:border-amber-400/70'
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => scrollToPoll(p.id)}
+                          className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                            isAnswered
+                              ? 'border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50'
+                              : 'border border-slate-700 bg-slate-800/80 text-slate-300 hover:border-[#EB5624]/60 hover:text-white'
                           }`}
                         >
-                          {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+                          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold bg-black/40">
+                            {isAnswered ? '✓' : idx + 1}
+                          </span>
+                          <span className="truncate max-w-[140px] sm:max-w-[180px]">
+                            {p.category || p.title}
+                          </span>
+                          {chosenOption && (
+                            <span className="hidden md:inline text-[10px] font-normal text-slate-400 truncate max-w-[90px]">
+                              ({chosenOption.text})
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Voter Name indicator pill */}
+                  <div className="text-xs">
+                    {voterName.trim().length >= 2 ? (
+                      nameAlreadyVotedInfo.alreadyVoted ? (
+                        <span className="inline-flex items-center gap-1 text-red-400 font-bold">
+                          <ShieldAlert className="h-3.5 w-3.5" /> Already Voted
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-emerald-400 font-bold">
+                          <UserCheck className="h-3.5 w-3.5" /> {voterName.trim()} (1 Vote)
+                        </span>
+                      )
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-amber-400 text-[11px]">
+                        <User className="h-3 w-3" /> Name required below
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* STEP 1: VOTER NAME & SINGLE-VOTE AUTHENTICATION */}
+              <div className="relative overflow-hidden rounded-3xl border border-[#EB5624]/50 bg-gradient-to-b from-[#19222c] via-[#131921] to-[#0e1318] p-5 sm:p-7 shadow-2xl">
+                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#EB5624] via-[#FF7A45] to-amber-500" />
+
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#EB5624]/15 border border-[#EB5624]/40 text-[#EB5624] shadow-md">
+                      <User className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-[#EB5624]/15 border border-[#EB5624]/40 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#FF7A45]">
+                          Step 1 • Required
+                        </span>
+                        <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold text-slate-300 border border-slate-700">
+                          1 Vote Per Person
+                        </span>
+                      </div>
+                      <h2 className="mt-1 text-lg sm:text-xl font-black text-white">
+                        Enter Your Full Name
+                      </h2>
+                    </div>
+                  </div>
+
+                  <div className="text-right hidden sm:block">
+                    <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                      <Lock className="h-3.5 w-3.5 text-amber-400" />
+                      Strict Single-Vote Verification
+                    </span>
+                  </div>
+                </div>
+
+                <p className="mt-3 text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Please enter your full name as registered in the Nexusguard employee directory. Your name ensures that each team member can only submit one confidential ballot.
+                </p>
+
+                <div className="mt-4">
+                  <div className="relative">
+                    <input
+                      id="primary-voter-name-input"
+                      type="text"
+                      required
+                      value={voterName}
+                      onChange={(e) => {
+                        setVoterName(e.target.value);
+                        setFormError(null);
+                      }}
+                      placeholder="e.g. Maria Santos or Juan Dela Cruz"
+                      className={`w-full rounded-2xl border bg-[#0a0e13] px-4 py-3.5 pl-12 text-sm sm:text-base text-white placeholder:text-slate-500 transition-all focus:outline-none focus:ring-2 ${
+                        nameAlreadyVotedInfo.alreadyVoted
+                          ? 'border-red-500/80 focus:border-red-500 focus:ring-red-500/30'
+                          : voterName.trim().length >= 2
+                          ? 'border-emerald-500/70 focus:border-emerald-500 focus:ring-emerald-500/30'
+                          : 'border-slate-700 focus:border-[#EB5624] focus:ring-[#EB5624]/40'
+                      }`}
+                    />
+                    <User className="pointer-events-none absolute left-4 top-4 h-5 w-5 text-[#EB5624]" />
+
+                    {nameCheckLoading && (
+                      <div className="absolute right-4 top-4 flex items-center gap-1.5 text-xs text-slate-400">
+                        <span className="h-4 w-4 rounded-full border-2 border-[#EB5624] border-t-transparent animate-spin" />
+                        <span className="hidden sm:inline">Verifying eligibility...</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Real-time verification feedback */}
+                  {nameAlreadyVotedInfo.alreadyVoted ? (
+                    <div className="mt-3 rounded-xl border border-red-500/50 bg-red-950/70 p-4 text-xs sm:text-sm text-red-200">
+                      <div className="flex items-start gap-2.5">
+                        <ShieldAlert className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="font-bold text-white">
+                            A vote has already been submitted under the name &quot;{nameAlreadyVotedInfo.voterName}&quot;.
+                          </p>
+                          <p className="mt-1 text-red-300">
+                            Each team member may only vote once. If this is you, your ballot has already been securely sealed.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHasVoted(true);
+                              setConfirmedVoterName(nameAlreadyVotedInfo.voterName || voterName.trim());
+                              setConfirmedTimestamp(nameAlreadyVotedInfo.timestamp || '');
+                              if (nameAlreadyVotedInfo.votes) {
+                                setConfirmedVotes(nameAlreadyVotedInfo.votes);
+                              }
+                            }}
+                            className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-red-500 transition-colors cursor-pointer"
+                          >
+                            <span>View Your Submitted Ballot</span>
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : voterName.trim().length >= 2 && !nameCheckLoading ? (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-emerald-400 font-bold">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                      <span>
+                        Verified: &quot;{voterName.trim()}&quot; is eligible to cast 1 official ballot. Select your choices below!
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* RENDER EACH ACTIVE POLL CARD */}
+              {activePolls.map((poll, pollIdx) => {
+                const selectedOptionId = selectedVotes[poll.id] || '';
+                const selectedOption = poll.options.find((o) => o.id === selectedOptionId);
+
+                return (
+                  <div
+                    key={poll.id}
+                    id={`poll-card-${poll.id}`}
+                    className="relative overflow-hidden rounded-3xl border border-slate-700/80 bg-gradient-to-b from-[#161d25] via-[#12171e] to-[#0d1117] p-5 shadow-2xl transition-all sm:p-7"
+                  >
+                    {/* Top Accent line */}
+                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#EB5624] via-[#FF7A45] to-amber-500" />
+
+                    {/* Poll Header */}
+                    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-700/60 pb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-[#EB5624]/50 bg-[#EB5624]/10 px-3 py-0.5 text-xs font-bold uppercase tracking-wider text-[#FF7A45]">
+                            <Sparkles className="h-3 w-3 text-[#EB5624]" />
+                            <span>Poll {pollIdx + 1} of {activePolls.length}</span>
+                          </span>
+
+                          {poll.category && (
+                            <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-[11px] font-semibold text-slate-300 border border-slate-700">
+                              {poll.category}
+                            </span>
+                          )}
                         </div>
 
-                        {/* Option Photo Thumbnail (if provided) */}
-                        {option.imageUrl && (
-                          <div className="group/img relative h-20 w-20 sm:h-24 sm:w-24 shrink-0 overflow-hidden rounded-xl border border-emerald-700/60 bg-[#07130e] shadow-md">
-                            <img
-                              src={option.imageUrl}
-                              alt={option.text}
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover/img:scale-110"
-                              referrerPolicy="no-referrer"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
-                            />
-                            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                setPreviewImage({ url: option.imageUrl!, title: option.text });
-                              }}
-                              title="Click to zoom photo"
-                              className="absolute bottom-1 right-1 flex items-center justify-center rounded-md bg-black/75 p-1 text-white opacity-80 backdrop-blur-xs transition-all hover:bg-amber-400 hover:text-slate-950 group-hover/img:opacity-100"
-                            >
-                              <Maximize2 className="h-3 w-3" />
-                            </button>
+                        <h2 className="mt-2 text-xl sm:text-2xl font-black text-white">
+                          {poll.title}
+                        </h2>
+
+                        {poll.description && (
+                          <p className="mt-1 text-xs sm:text-sm text-slate-300">
+                            {poll.description}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Current Poll Status Badge */}
+                      <div className="shrink-0">
+                        {selectedOption ? (
+                          <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/50 bg-emerald-950/60 px-3 py-1 text-xs font-bold text-emerald-300 shadow-sm">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                            <span>Selected: {selectedOption.text}</span>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/50 bg-amber-950/40 px-3 py-1 text-xs font-semibold text-amber-300">
+                            <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+                            <span>Select 1 Choice</span>
                           </div>
                         )}
+                      </div>
+                    </div>
 
-                        {/* Option Details */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`text-sm sm:text-base font-bold transition-colors ${
-                                isSelected ? 'text-amber-200' : 'text-slate-100 group-hover:text-amber-100'
+                    {/* Options Grid for this Poll */}
+                    <div className="mt-6">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2">
+                        {poll.options.map((option) => {
+                          const isSelected = selectedOptionId === option.id;
+
+                          return (
+                            <div
+                              key={option.id}
+                              onClick={() => handleSelectOption(poll.id, option.id)}
+                              className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border p-4 transition-all duration-200 cursor-pointer ${
+                                isSelected
+                                  ? 'border-[#EB5624] bg-gradient-to-b from-[#241a17] to-[#1a1514] shadow-xl shadow-[#EB5624]/20 ring-2 ring-[#EB5624]/60'
+                                  : 'border-slate-700/70 bg-[#141a21]/90 hover:border-slate-500 hover:bg-[#1a222c]'
                               }`}
                             >
-                              {option.text}
-                            </span>
+                              {/* Option Image (if present) */}
+                              {option.imageUrl && (
+                                <div className="relative mb-3.5 h-44 w-full overflow-hidden rounded-xl bg-black/50 border border-slate-700/60">
+                                  <img
+                                    src={option.imageUrl}
+                                    alt={option.text}
+                                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                    referrerPolicy="no-referrer"
+                                    loading="lazy"
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
 
-                            {option.badge && (
-                              <span
-                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase transition-colors ${
-                                  isSelected
-                                    ? 'bg-amber-400/25 text-amber-300 border border-amber-400/50'
-                                    : 'bg-emerald-900/40 text-emerald-300 border border-emerald-700/50'
-                                }`}
-                              >
-                                <Tag className="h-2.5 w-2.5" />
-                                {option.badge}
-                              </span>
+                                  {/* Zoom icon button */}
+                                  <button
+                                    type="button"
+                                    title="View enlarged photo"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPreviewImage({ url: option.imageUrl!, title: option.text });
+                                    }}
+                                    className="absolute bottom-2 right-2 rounded-lg bg-black/70 p-1.5 text-slate-300 hover:text-white hover:bg-black transition-colors"
+                                  >
+                                    <Maximize2 className="h-4 w-4" />
+                                  </button>
+
+                                  {/* Badge on image */}
+                                  {option.badge && (
+                                    <span className="absolute top-2 left-2 rounded-md bg-[#EB5624]/90 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md">
+                                      {option.badge}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Content Info */}
+                              <div className="flex-1">
+                                {!option.imageUrl && option.badge && (
+                                  <span className="mb-2 inline-block rounded-md bg-[#EB5624]/15 border border-[#EB5624]/40 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#FF7A45]">
+                                    {option.badge}
+                                  </span>
+                                )}
+
+                                <h3 className="text-base font-bold text-white group-hover:text-[#FF7A45] transition-colors leading-snug">
+                                  {option.text}
+                                </h3>
+
+                                {option.description && (
+                                  <p className="mt-1.5 text-xs text-slate-300 leading-relaxed">
+                                    {option.description}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Selection Radio Footer */}
+                              <div className="mt-4 flex items-center justify-between border-t border-slate-700/60 pt-3">
+                                <div className="flex items-center gap-2.5">
+                                  <div
+                                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all ${
+                                      isSelected
+                                        ? 'border-[#EB5624] bg-[#EB5624] text-white shadow-md shadow-[#EB5624]/50'
+                                        : 'border-slate-500 group-hover:border-slate-300'
+                                    }`}
+                                  >
+                                    {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+                                  </div>
+                                  <span className={`text-xs font-bold ${isSelected ? 'text-[#FF7A45]' : 'text-slate-400 group-hover:text-slate-200'}`}>
+                                    {isSelected ? 'Selected' : 'Choose This Option'}
+                                  </span>
+                                </div>
+
+                                {isSelected && (
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    Active Choice
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* BALLOT SUBMISSION CONSOLE */}
+              <div
+                id="ballot-submission-box"
+                className="relative overflow-hidden rounded-3xl border border-[#EB5624]/50 bg-gradient-to-b from-[#182029] via-[#121820] to-[#0c1015] p-6 shadow-2xl sm:p-8"
+              >
+                {/* Ambient orange glow */}
+                <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-[#EB5624]/15 blur-3xl" />
+                <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-[#EB5624] via-[#FF7A45] to-[#EB5624]" />
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/60 pb-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <NexusguardLogo size="sm" variant="badge" className="py-1 px-3 shadow-none border-none" />
+                      <span className="rounded-full bg-[#EB5624]/15 border border-[#EB5624]/40 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#FF7A45]">
+                        Final Step
+                      </span>
+                    </div>
+                    <h3 className="mt-2 text-xl sm:text-2xl font-black text-white">
+                      Seal &amp; Submit Official Ballot
+                    </h3>
+                    <p className="mt-1 text-xs sm:text-sm text-slate-300">
+                      Confirm your name and review your choices across all polls before sealing.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-700 bg-[#0f151c] px-3.5 py-2 text-right">
+                    <div className="text-[11px] font-semibold text-slate-400">Ballot Status</div>
+                    <div className="text-sm font-black text-white">
+                      {nameAlreadyVotedInfo.alreadyVoted ? (
+                        <span className="text-red-400">Already Voted</span>
+                      ) : allPollsAnswered && voterName.trim().length >= 2 ? (
+                        <span className="text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="h-4 w-4" /> Ready to Submit
+                        </span>
+                      ) : (
+                        <span className="text-amber-400">
+                          {activePolls.length - answeredCount} poll(s) left
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ballot Review Summary Checklist */}
+                <div className="mt-5 rounded-2xl border border-slate-700/70 bg-[#0f141b] p-4">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">
+                    Ballot Review Summary
+                  </h4>
+                  <div className="space-y-2">
+                    {activePolls.map((poll, idx) => {
+                      const selectedId = selectedVotes[poll.id];
+                      const option = poll.options.find((o) => o.id === selectedId);
+
+                      return (
+                        <div
+                          key={poll.id}
+                          className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#141b24] px-3.5 py-2.5 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <span className="font-semibold text-slate-400">
+                              Poll #{idx + 1} ({poll.category || poll.title}):
+                            </span>{' '}
+                            {option ? (
+                              <span className="font-bold text-white">{option.text}</span>
+                            ) : (
+                              <span className="font-bold text-amber-400 italic">No option selected yet</span>
                             )}
                           </div>
 
-                          {option.description && (
-                            <p className="mt-1 text-xs text-slate-300/80 leading-relaxed">
-                              {option.description}
-                            </p>
+                          {option ? (
+                            <span className="shrink-0 text-emerald-400 font-bold flex items-center gap-1">
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Selected
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => scrollToPoll(poll.id)}
+                              className="shrink-0 rounded-md bg-amber-500/20 px-2 py-0.5 text-[11px] font-bold text-amber-300 hover:bg-amber-500/30 transition-colors cursor-pointer"
+                            >
+                              Jump to Select
+                            </button>
                           )}
                         </div>
-                      </label>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
-              {/* Error Notice */}
-              {formError && (
-                <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-red-500/60 bg-red-950/80 p-3.5 text-xs text-red-200 shadow-md">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
-                  <span>{formError}</span>
-                </div>
-              )}
+                {/* Voter Name Verification in Submit Console */}
+                <div className="mt-6">
+                  <label
+                    htmlFor="voter-name-field"
+                    className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-200"
+                  >
+                    <User className="h-4 w-4 text-[#EB5624]" />
+                    <span>Voter Full Name * (Enforces 1 Vote Per Team Member)</span>
+                  </label>
 
-              {/* Submit Button inside the tile */}
-              <div className="mt-8 border-t border-emerald-800/60 pt-6">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className={`group relative flex w-full items-center justify-center gap-3 rounded-2xl border border-amber-400/50 bg-gradient-to-r from-red-600 via-red-700 to-amber-600 px-8 py-4 text-base sm:text-lg font-bold text-white shadow-xl shadow-red-950/60 transition-all hover:brightness-110 active:scale-[0.99] ${
-                    submitting ? 'cursor-wait opacity-75' : ''
-                  }`}
-                >
-                  {submitting ? (
-                    <div className="flex items-center gap-2">
-                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      <span>Submitting Vote...</span>
-                    </div>
-                  ) : (
-                    <>
-                      <Sparkles className="h-5 w-5 text-amber-300 group-hover:scale-110 transition-transform" />
-                      <span>Submit Christmas Vote 🎁</span>
-                      <Send className="h-4 w-4 text-white group-hover:translate-x-1 transition-transform" />
-                    </>
+                  <div className="relative mt-2">
+                    <input
+                      id="voter-name-field"
+                      type="text"
+                      required
+                      value={voterName}
+                      onChange={(e) => {
+                        setVoterName(e.target.value);
+                        setFormError(null);
+                      }}
+                      placeholder="e.g. Maria Santos or Juan Dela Cruz"
+                      className={`w-full rounded-xl border bg-[#0a0e13] px-4 py-3 pl-11 text-sm sm:text-base text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 ${
+                        nameAlreadyVotedInfo.alreadyVoted
+                          ? 'border-red-500/80 focus:border-red-500 focus:ring-red-500/40'
+                          : 'border-slate-700 focus:border-[#EB5624] focus:ring-[#EB5624]/40'
+                      }`}
+                    />
+                    <User className="pointer-events-none absolute left-3.5 top-3.5 h-4 w-4 text-[#EB5624]" />
+                  </div>
+
+                  {nameAlreadyVotedInfo.alreadyVoted && (
+                    <p className="mt-2 text-xs font-bold text-red-400">
+                      ⚠️ A vote has already been submitted under this name. Each person can only vote once.
+                    </p>
                   )}
-                </button>
+                </div>
 
-                <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
-                  <span className="flex items-center gap-1 text-emerald-300">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                    <span>Single Vote Enforced</span>
-                  </span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1 text-amber-300/90">
-                    <Lock className="h-3 w-3 text-amber-400" />
-                    <span>Results Confidential</span>
-                  </span>
+                {/* Error Banner */}
+                {formError && (
+                  <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-red-500/40 bg-red-950/80 p-3.5 text-xs text-red-200 sm:text-sm">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {/* Submit CTA Button */}
+                <div className="mt-6">
+                  <button
+                    type="submit"
+                    disabled={submitting || nameAlreadyVotedInfo.alreadyVoted}
+                    className={`w-full rounded-2xl py-4 px-6 text-center text-sm sm:text-base font-black uppercase tracking-wider transition-all shadow-xl cursor-pointer ${
+                      nameAlreadyVotedInfo.alreadyVoted
+                        ? 'border border-red-500/50 bg-red-950/60 text-red-300 cursor-not-allowed'
+                        : allPollsAnswered && voterName.trim().length >= 2
+                        ? 'border border-[#EB5624] bg-gradient-to-r from-[#EB5624] via-[#f06132] to-[#FF7A45] text-white hover:brightness-110 shadow-[#EB5624]/30'
+                        : 'border border-slate-700 bg-slate-800 text-slate-400 hover:bg-slate-750'
+                    }`}
+                  >
+                    {submitting ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                        <span>Sealing &amp; Submitting Ballot...</span>
+                      </span>
+                    ) : nameAlreadyVotedInfo.alreadyVoted ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <ShieldAlert className="h-5 w-5" />
+                        <span>Vote Already Recorded For &quot;{nameAlreadyVotedInfo.voterName}&quot;</span>
+                      </span>
+                    ) : voterName.trim().length < 2 ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <User className="h-4 w-4 text-[#EB5624]" />
+                        <span>Enter Your Full Name to Submit Ballot</span>
+                      </span>
+                    ) : allPollsAnswered ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <ShieldCheck className="h-5 w-5" />
+                        <span>Submit Official Nexusguard Ballot (1 Vote)</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center gap-2">
+                        <AlertCircle className="h-4 w-4 text-amber-400" />
+                        <span>Complete All {activePolls.length} Polls to Submit ({answeredCount}/{activePolls.length})</span>
+                      </span>
+                    )}
+                  </button>
+
+                  <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
+                    <span className="flex items-center gap-1 text-slate-300">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>Single Vote Verified</span>
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1 text-slate-300">
+                      <Lock className="h-3.5 w-3.5 text-amber-400" />
+                      <span>Encrypted &amp; Confidential</span>
+                    </span>
+                    <span>•</span>
+                    <span className="text-[#EB5624] font-semibold">Nexusguard Holiday Committee</span>
+                  </div>
                 </div>
               </div>
             </form>
           ) : (
-            <div className="rounded-2xl border border-emerald-800/40 bg-[#10241b] p-8 text-center text-slate-300">
-              No active giveaway poll found.
+            <div className="rounded-2xl border border-slate-700 bg-[#131920] p-8 text-center text-slate-300">
+              No active polls are currently published. Please check back shortly.
             </div>
           )}
         </div>
 
-        {/* Festive Footer */}
-        <footer className="mt-16 text-center text-xs text-emerald-300/60">
+        {/* Clean Footer - "Committee Secret Ballot" link removed as requested */}
+        <footer className="mt-16 text-center text-xs text-slate-500">
+          <div className="flex justify-center mb-3">
+            <NexusguardLogo size="sm" variant="badge" className="py-1 px-3 shadow-none border-none" />
+          </div>
           <p className="flex items-center justify-center gap-1.5">
-            <span>🎄</span>
-            <span>Christmas Giveaway Poll</span>
+            <span>Nexusguard Cybersecurity</span>
             <span>•</span>
-            <span>Wishing You a Joyful Holiday Season!</span>
-            <span>⭐</span>
+            <span>Annual Year-End Celebration &amp; Christmas Polls</span>
           </p>
-          <p className="mt-1.5 text-[11px] text-slate-400/60">
-            Countdown target: September 18, 6:00 PM PST •{' '}
-            <button
-              type="button"
-              onClick={() => {
-                window.history.pushState({}, '', '/admin');
-                setIsAdminRoute(true);
-              }}
-              className="text-emerald-400/60 hover:text-amber-300 transition-colors underline decoration-dotted underline-offset-2 cursor-pointer"
-              title="Authorized Committee Access"
-            >
-              Committee Secret Ballot
-            </button>
+          <p className="mt-1.5 text-[11px] text-slate-500">
+            Voting deadline: September 18, 6:00 PM PST
           </p>
         </footer>
       </div>
 
-      {/* Lightbox / Image Preview Modal */}
+      {/* Lightbox / Enlarged Image Preview Modal */}
       {previewImage && (
         <div
           role="dialog"
@@ -605,17 +1058,17 @@ export default function App() {
           onClick={() => setPreviewImage(null)}
         >
           <div
-            className="relative max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-amber-400/50 bg-[#0c1813] shadow-2xl"
+            className="relative max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-[#EB5624]/50 bg-[#0d1217] shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-emerald-800/70 bg-[#10241a] px-5 py-3.5">
-              <span className="font-serif text-sm sm:text-base font-bold text-white truncate pr-4">
+            <div className="flex items-center justify-between border-b border-slate-700 bg-[#141b24] px-5 py-3.5">
+              <span className="text-sm sm:text-base font-bold text-white truncate pr-4">
                 {previewImage.title}
               </span>
               <button
                 type="button"
                 onClick={() => setPreviewImage(null)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
