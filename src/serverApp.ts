@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import compression from 'compression';
 import fs from 'fs';
 import path from 'path';
 import type { AppConfig, Poll, VoterResponse, AdminDataResponse } from './types.ts';
@@ -185,11 +186,14 @@ function saveDatabase(dataToSave: DatabaseSchema) {
 
 let db: DatabaseSchema = initDatabase();
 let isSynced = false;
+let isSyncing = false;
 let lastSyncTime = 0;
 
 export async function ensureDbSynced(force = false) {
   const now = Date.now();
-  if (!isSynced || force || now - lastSyncTime > 12000) {
+  if (isSyncing) return;
+  if (!isSynced || force || now - lastSyncTime > 30000) {
+    isSyncing = true;
     try {
       const firestoreData = await loadFromFirestore(db.config, db.polls);
       db = firestoreData;
@@ -198,6 +202,8 @@ export async function ensureDbSynced(force = false) {
       saveDatabase(db);
     } catch (err: any) {
       console.warn('Firestore sync warning:', err?.message || err);
+    } finally {
+      isSyncing = false;
     }
   }
 }
@@ -248,6 +254,7 @@ function escapeCsvField(val: string | number | undefined | null): string {
 }
 
 const app = express();
+app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 
 // CORS & Preflight handling
@@ -262,12 +269,16 @@ app.use((req, res, next) => {
 });
 
 // Middleware to keep Firestore and memory synchronized
-app.use(async (req, res, next) => {
+app.use((req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/admin') || req.path.startsWith('/public-polls')) {
-    try {
-      await ensureDbSynced();
-    } catch (e) {
-      // Continue with in-memory db
+    if (!isSynced) {
+      ensureDbSynced().then(() => next()).catch(() => next());
+      return;
+    } else {
+      const now = Date.now();
+      if (now - lastSyncTime > 30000) {
+        ensureDbSynced().catch(() => {});
+      }
     }
   }
   next();
@@ -277,6 +288,7 @@ const apiRouter = express.Router();
 
 // 1. Public Polls
 apiRouter.get('/public-polls', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
   const activePolls = db.polls
     .filter((p) => p.active)
     .sort((a, b) => a.order - b.order)

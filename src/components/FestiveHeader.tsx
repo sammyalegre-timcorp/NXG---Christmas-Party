@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, Sparkles, Star, Trophy, Users } from 'lucide-react';
+import { Lock, Sparkles, Star, Users } from 'lucide-react';
 import { NexusguardLogo } from './NexusguardLogo.tsx';
 
 interface FestiveHeaderProps {
@@ -61,11 +61,6 @@ export const FestiveHeader: React.FC<FestiveHeaderProps> = ({
         <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-[#161c24]/90 px-3.5 py-1 text-slate-200 shadow-sm">
           <Lock className="h-3.5 w-3.5 text-amber-400" />
           Confidential Ballot
-        </span>
-
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-[#1f1a14]/90 px-3.5 py-1 text-amber-300 shadow-sm">
-          <Trophy className="h-3.5 w-3.5 text-amber-400" />
-          Raffle & Results Revealed at Party
         </span>
       </div>
     </header>

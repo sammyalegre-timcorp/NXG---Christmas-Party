@@ -24,14 +24,17 @@ import {
   UserCheck,
   X,
 } from 'lucide-react';
-import { Snowfall } from './components/Snowfall.tsx';
 import { ChristmasCountdown } from './components/ChristmasCountdown.tsx';
 import { FestiveHeader } from './components/FestiveHeader.tsx';
 import { VoterConfirmedView } from './components/VoterConfirmedView.tsx';
-import { AdminDashboard } from './components/AdminDashboard.tsx';
 import { NexusguardLogo } from './components/NexusguardLogo.tsx';
 import type { AppConfig, Poll, PublicPollsResponse } from './types.ts';
 import { fetchAdminDataDirect, directSubmitVote, directCheckVoter } from './clientDirectFirestore.ts';
+
+// Code-split AdminDashboard so regular voters on the main page do not download 1700+ lines of admin logic
+const AdminDashboard = React.lazy(() =>
+  import('./components/AdminDashboard.tsx').then((m) => ({ default: m.AdminDashboard }))
+);
 
 function checkIsAdminRoute(): boolean {
   if (typeof window === 'undefined') return false;
@@ -50,10 +53,31 @@ export default function App() {
   // Routing: check if committee accessed "/admin"
   const [isAdminRoute, setIsAdminRoute] = useState<boolean>(checkIsAdminRoute);
 
-  // Polls & Config data
-  const [config, setConfig] = useState<AppConfig | null>(null);
-  const [polls, setPolls] = useState<Poll[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Polls & Config data with instant cached hydration for immediate zero-delay first-paint
+  const [config, setConfig] = useState<AppConfig | null>(() => {
+    try {
+      const cached = localStorage.getItem('nexusguard_cached_config');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [polls, setPolls] = useState<Poll[]>(() => {
+    try {
+      const cached = localStorage.getItem('nexusguard_cached_polls');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    try {
+      const cached = localStorage.getItem('nexusguard_cached_polls');
+      return !(cached && JSON.parse(cached).length > 0);
+    } catch {
+      return true;
+    }
+  });
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Multi-poll vote state: pollId -> optionId
@@ -109,7 +133,6 @@ export default function App() {
   // Fetch all polls data on mount
   const fetchPolls = async () => {
     try {
-      setLoading(true);
       setFetchError(null);
       let data: PublicPollsResponse | null = null;
 
@@ -135,13 +158,24 @@ export default function App() {
       }
 
       if (data) {
-        if (data.config) setConfig(data.config);
+        if (data.config) {
+          setConfig(data.config);
+          try {
+            localStorage.setItem('nexusguard_cached_config', JSON.stringify(data.config));
+          } catch (e) {}
+        }
         if (data.polls && Array.isArray(data.polls)) {
           setPolls(data.polls);
+          try {
+            localStorage.setItem('nexusguard_cached_polls', JSON.stringify(data.polls));
+          } catch (e) {}
         }
       }
 
-      // Check if user previously voted on this device
+      // Immediately unblock loading indicator as soon as polls are available
+      setLoading(false);
+
+      // Check if user previously voted on this device (runs in background without holding up polls display)
       const storedName = localStorage.getItem('nexusguard_voter_name') || localStorage.getItem('christmas_giveaway_voter_name');
       const storedTimestamp = localStorage.getItem('nexusguard_voter_timestamp') || localStorage.getItem('christmas_giveaway_timestamp');
       const storedVotesRaw = localStorage.getItem('nexusguard_voter_votes');
@@ -399,21 +433,29 @@ export default function App() {
 
   if (isAdminRoute) {
     return (
-      <AdminDashboard
-        onNavigateToMain={() => {
-          window.history.pushState({}, '', '/');
-          setIsAdminRoute(false);
-          fetchPolls();
-        }}
-      />
+      <React.Suspense
+        fallback={
+          <div className="min-h-screen bg-[#0a1511] flex items-center justify-center text-slate-300">
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-8 w-8 rounded-full border-2 border-[#EB5624] border-t-transparent animate-spin" />
+              <p className="text-sm font-semibold text-white">Loading Admin Portal...</p>
+            </div>
+          </div>
+        }
+      >
+        <AdminDashboard
+          onNavigateToMain={() => {
+            window.history.pushState({}, '', '/');
+            setIsAdminRoute(false);
+            fetchPolls();
+          }}
+        />
+      </React.Suspense>
     );
   }
 
   return (
     <div className="relative min-h-screen bg-[#0c1015] text-[#f4f7f5] selection:bg-[#EB5624] selection:text-white">
-      {/* Subtle festive snowfall */}
-      <Snowfall />
-
       {/* Main Container */}
       <div className="relative z-20 mx-auto max-w-4xl px-4 pb-24 sm:px-6">
         {/* Top Header with prominent Nexusguard Logo badge */}
@@ -758,6 +800,7 @@ export default function App() {
                                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                                     referrerPolicy="no-referrer"
                                     loading="lazy"
+                                    decoding="async"
                                   />
                                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
 
