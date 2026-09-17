@@ -115,6 +115,7 @@ export default function App() {
   }, [activePolls, selectedVotes]);
 
   const allPollsAnswered = activePolls.length > 0 && answeredCount === activePolls.length;
+  const isFormComplete = voterName.trim().length >= 2 && allPollsAnswered && !nameAlreadyVotedInfo.alreadyVoted;
 
   // Handle URL path & hash changes
   useEffect(() => {
@@ -623,7 +624,7 @@ export default function App() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="rounded-full bg-[#EB5624]/15 border border-[#EB5624]/40 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#FF7A45]">
-                          Step 1 • Required
+                          Required
                         </span>
                         <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold text-slate-300 border border-slate-700">
                           1 Vote Per Person
@@ -878,194 +879,70 @@ export default function App() {
                 );
               })}
 
-              {/* BALLOT SUBMISSION CONSOLE */}
-              <div
-                id="ballot-submission-box"
-                className="relative overflow-hidden rounded-3xl border border-[#EB5624]/50 bg-gradient-to-b from-[#182029] via-[#121820] to-[#0c1015] p-6 shadow-2xl sm:p-8"
-              >
-                {/* Ambient orange glow */}
-                <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-[#EB5624]/15 blur-3xl" />
-                <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-[#EB5624] via-[#FF7A45] to-[#EB5624]" />
-
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/60 pb-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <NexusguardLogo size="sm" variant="badge" className="py-1 px-3 shadow-none border-none" />
-                      <span className="rounded-full bg-[#EB5624]/15 border border-[#EB5624]/40 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#FF7A45]">
-                        Final Step
-                      </span>
-                    </div>
-                    <h3 className="mt-2 text-xl sm:text-2xl font-black text-white">
-                      Seal &amp; Submit Official Ballot
-                    </h3>
-                    <p className="mt-1 text-xs sm:text-sm text-slate-300">
-                      Confirm your name and review your choices across all polls before sealing.
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-700 bg-[#0f151c] px-3.5 py-2 text-right">
-                    <div className="text-[11px] font-semibold text-slate-400">Ballot Status</div>
-                    <div className="text-sm font-black text-white">
-                      {nameAlreadyVotedInfo.alreadyVoted ? (
-                        <span className="text-red-400">Already Voted</span>
-                      ) : allPollsAnswered && voterName.trim().length >= 2 ? (
-                        <span className="text-emerald-400 flex items-center gap-1">
-                          <CheckCircle2 className="h-4 w-4" /> Ready to Submit
-                        </span>
-                      ) : (
-                        <span className="text-amber-400">
-                          {activePolls.length - answeredCount} poll(s) left
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Ballot Review Summary Checklist */}
-                <div className="mt-5 rounded-2xl border border-slate-700/70 bg-[#0f141b] p-4">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">
-                    Ballot Review Summary
-                  </h4>
-                  <div className="space-y-2">
-                    {activePolls.map((poll, idx) => {
-                      const selectedId = selectedVotes[poll.id];
-                      const option = poll.options.find((o) => o.id === selectedId);
-
-                      return (
-                        <div
-                          key={poll.id}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#141b24] px-3.5 py-2.5 text-xs"
-                        >
-                          <div className="min-w-0">
-                            <span className="font-semibold text-slate-400">
-                              Poll #{idx + 1} ({poll.category || poll.title}):
-                            </span>{' '}
-                            {option ? (
-                              <span className="font-bold text-white">{option.text}</span>
-                            ) : (
-                              <span className="font-bold text-amber-400 italic">No option selected yet</span>
-                            )}
-                          </div>
-
-                          {option ? (
-                            <span className="shrink-0 text-emerald-400 font-bold flex items-center gap-1">
-                              <CheckCircle2 className="h-3.5 w-3.5" /> Selected
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => scrollToPoll(poll.id)}
-                              className="shrink-0 rounded-md bg-amber-500/20 px-2 py-0.5 text-[11px] font-bold text-amber-300 hover:bg-amber-500/30 transition-colors cursor-pointer"
-                            >
-                              Jump to Select
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Voter Name Verification in Submit Console */}
-                <div className="mt-6">
-                  <label
-                    htmlFor="voter-name-field"
-                    className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-200"
-                  >
-                    <User className="h-4 w-4 text-[#EB5624]" />
-                    <span>Voter Full Name * (Enforces 1 Vote Per Team Member)</span>
-                  </label>
-
-                  <div className="relative mt-2">
-                    <input
-                      id="voter-name-field"
-                      type="text"
-                      required
-                      value={voterName}
-                      onChange={(e) => {
-                        setVoterName(e.target.value);
-                        setFormError(null);
-                      }}
-                      placeholder="e.g. Maria Santos or Juan Dela Cruz"
-                      className={`w-full rounded-xl border bg-[#0a0e13] px-4 py-3 pl-11 text-sm sm:text-base text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 ${
-                        nameAlreadyVotedInfo.alreadyVoted
-                          ? 'border-red-500/80 focus:border-red-500 focus:ring-red-500/40'
-                          : 'border-slate-700 focus:border-[#EB5624] focus:ring-[#EB5624]/40'
-                      }`}
-                    />
-                    <User className="pointer-events-none absolute left-3.5 top-3.5 h-4 w-4 text-[#EB5624]" />
-                  </div>
-
-                  {nameAlreadyVotedInfo.alreadyVoted && (
-                    <p className="mt-2 text-xs font-bold text-red-400">
-                      ⚠️ A vote has already been submitted under this name. Each person can only vote once.
-                    </p>
-                  )}
-                </div>
-
-                {/* Error Banner */}
+              {/* SUBMIT ENTRY BUTTON */}
+              <div id="submit-entry-container" className="pt-4">
                 {formError && (
-                  <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-red-500/40 bg-red-950/80 p-3.5 text-xs text-red-200 sm:text-sm">
+                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-500/40 bg-red-950/80 p-3.5 text-xs text-red-200 sm:text-sm">
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
                     <span>{formError}</span>
                   </div>
                 )}
 
-                {/* Submit CTA Button */}
-                <div className="mt-6">
-                  <button
-                    type="submit"
-                    disabled={submitting || nameAlreadyVotedInfo.alreadyVoted}
-                    className={`w-full rounded-2xl py-4 px-6 text-center text-sm sm:text-base font-black uppercase tracking-wider transition-all shadow-xl cursor-pointer ${
-                      nameAlreadyVotedInfo.alreadyVoted
-                        ? 'border border-red-500/50 bg-red-950/60 text-red-300 cursor-not-allowed'
-                        : allPollsAnswered && voterName.trim().length >= 2
-                        ? 'border border-[#EB5624] bg-gradient-to-r from-[#EB5624] via-[#f06132] to-[#FF7A45] text-white hover:brightness-110 shadow-[#EB5624]/30'
-                        : 'border border-slate-700 bg-slate-800 text-slate-400 hover:bg-slate-750'
-                    }`}
-                  >
-                    {submitting ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                        <span>Sealing &amp; Submitting Ballot...</span>
-                      </span>
-                    ) : nameAlreadyVotedInfo.alreadyVoted ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <ShieldAlert className="h-5 w-5" />
-                        <span>Vote Already Recorded For &quot;{nameAlreadyVotedInfo.voterName}&quot;</span>
-                      </span>
-                    ) : voterName.trim().length < 2 ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <User className="h-4 w-4 text-[#EB5624]" />
-                        <span>Enter Your Full Name to Submit Ballot</span>
-                      </span>
-                    ) : allPollsAnswered ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <ShieldCheck className="h-5 w-5" />
-                        <span>Submit Official Nexusguard Ballot (1 Vote)</span>
-                        <ArrowRight className="h-4 w-4" />
-                      </span>
-                    ) : (
-                      <span className="flex items-center justify-center gap-2">
-                        <AlertCircle className="h-4 w-4 text-amber-400" />
-                        <span>Complete All {activePolls.length} Polls to Submit ({answeredCount}/{activePolls.length})</span>
-                      </span>
-                    )}
-                  </button>
+                <button
+                  type="submit"
+                  id="submit-entry-button"
+                  disabled={!isFormComplete || submitting}
+                  className={`w-full rounded-2xl py-4 px-6 text-center text-base sm:text-lg font-black uppercase tracking-wider transition-all duration-200 shadow-xl ${
+                    !isFormComplete || submitting
+                      ? 'border border-slate-800 bg-slate-800/80 text-slate-500 cursor-not-allowed opacity-60'
+                      : 'border border-[#EB5624] bg-gradient-to-r from-[#EB5624] via-[#f06132] to-[#FF7A45] text-white hover:brightness-110 shadow-[#EB5624]/30 cursor-pointer active:scale-[0.99]'
+                  }`}
+                >
+                  {submitting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      <span>Submitting Entry...</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <Send className="h-5 w-5" />
+                      <span>Submit Entry</span>
+                      <ArrowRight className="h-5 w-5" />
+                    </span>
+                  )}
+                </button>
 
-                  <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
-                    <span className="flex items-center gap-1 text-slate-300">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                      <span>Single Vote Verified</span>
-                    </span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1 text-slate-300">
-                      <Lock className="h-3.5 w-3.5 text-amber-400" />
-                      <span>Encrypted &amp; Confidential</span>
-                    </span>
-                    <span>•</span>
-                    <span className="text-[#EB5624] font-semibold">Nexusguard Holiday Committee</span>
-                  </div>
+                {/* Real-time hint when not clickable */}
+                <div className="mt-3 text-center">
+                  {nameAlreadyVotedInfo.alreadyVoted ? (
+                    <p className="text-xs font-bold text-red-400">
+                      ⚠️ A vote has already been submitted under &quot;{nameAlreadyVotedInfo.voterName}&quot;. Each person can only vote once.
+                    </p>
+                  ) : !isFormComplete ? (
+                    <p className="text-xs text-slate-400">
+                      {voterName.trim().length < 2
+                        ? 'Please enter your full name above and complete all polls to enable submission.'
+                        : `Please complete all ${activePolls.length} polls above (${answeredCount}/${activePolls.length} selected) to enable submission.`}
+                    </p>
+                  ) : (
+                    <p className="text-xs font-semibold text-emerald-400 flex items-center justify-center gap-1.5">
+                      <CheckCircle2 className="h-4 w-4" /> All information and polls completed. Ready to submit!
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
+                  <span className="flex items-center gap-1 text-slate-300">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Single Vote Verified</span>
+                  </span>
+                  <span>•</span>
+                  <span className="flex items-center gap-1 text-slate-300">
+                    <Lock className="h-3.5 w-3.5 text-amber-400" />
+                    <span>Encrypted &amp; Confidential</span>
+                  </span>
+                  <span>•</span>
+                  <span className="text-[#EB5624] font-semibold">Nexusguard Holiday Committee</span>
                 </div>
               </div>
             </form>
